@@ -119,28 +119,35 @@ def MemberExpression(syntax, info={}):
         }
         default = f'{obj}[{method_name}]'
 
-        if syntax.property.type == 'Identifier' and syntax.property.name == 'split' and 'arg_str' in info:
-            return f'strings.Split({obj}, {info["arg_str"]})'
+        if syntax.property.type == 'Identifier' and syntax.property.name == 'split':
+            print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
+            print(info)
+            print(syntax)
+            if 'arg_str' in info:
+                return f'strings.Split({obj}, {info["arg_str"]})'
 
-        if info and info.get('pre') in ['right', 'init', 'test']:
+        if info.get('pre') in ['right', 'init', 'test']:
             default = f'self.Member({obj}, {method_name})'
+        if info.get('pre') in ['left']:
+            default = f'self.SetValue({obj}, {method_name})'
+
         return m.get(syntax.property.name, default)
 
 
 def CallExpression(syntax, info={}):
+    arg_str = ','.join([call_func_by_syntax(arg, info) for arg in syntax.arguments])
+    # default arg
+    if syntax.callee.property.name.lower() in DEFAULT_FUNC_ARGS:
+        arg_info = DEFAULT_FUNC_ARGS[syntax.callee.property.name.lower()]
+        arg_str += f', {arg_info[1]}' * (arg_info[0] - len(syntax.arguments))
+    info.update({'arg_str': arg_str})
+
     pre_part = f'{call_func_by_syntax(syntax.callee, info)}'
 
     # toString -> fmt.Sprintf
     if '(' in pre_part and ')' in pre_part:
         return pre_part
 
-    arg_str = ','.join([call_func_by_syntax(arg, info) for arg in syntax.arguments])
-    # default arg
-    if syntax.callee.property.name.lower() in DEFAULT_FUNC_ARGS:
-        arg_info = DEFAULT_FUNC_ARGS[syntax.callee.property.name.lower()]
-        arg_str += f', {arg_info[1]}' * (arg_info[0] - len(syntax.arguments))
-
-    info.update({'arg_str': arg_str})
     call_str = call_func_by_syntax(syntax.callee, info)
     if re.findall(r'self\.(Private|Public)', call_str):
         info = DEFAULT_FUNC_ARGS['apifunc']
@@ -213,8 +220,13 @@ def Identifier(syntax, info={}):
 
 def BinaryExpression(syntax, info={}):
     operator = syntax.operator
-    if operator == '===' or operator == '!==' and syntax.right.name == 'undefined':
-        return f'self.TestNil({call_func_by_syntax(syntax.left)})'
+
+    if syntax.right.name == 'undefined':
+        if operator == '===':
+            return f'self.TestNil({call_func_by_syntax(syntax.left)})'
+        if operator == '!==':
+            return f'!self.TestNil({call_func_by_syntax(syntax.left)})'
+
     if operator == '===':
         operator = '=='
     if operator == '!==':
@@ -237,11 +249,13 @@ def call_func_by_syntax(syntax, info={}):
 
 def AssignmentExpression(syntax, info={}):
     operator = syntax.operator
-    '''
-    if operator == '=':
-        operator = ':='
-        '''
-    return f'{call_func_by_syntax(syntax.left, {"pre": "left"})} {operator} {call_func_by_syntax(syntax.right, {"pre": "right"})}'
+    if syntax.left.type == 'MemberExpression':
+        arg1 = call_func_by_syntax(syntax.left.object)
+        arg2 = call_func_by_syntax(syntax.left.property)
+        arg3 = call_func_by_syntax(syntax.right, {"pre": "right"})
+        return f'self.SetValue({arg1}, {arg2}, {arg3})'
+    else:
+        return f'{call_func_by_syntax(syntax.left, {"pre": "left"})} {operator} {call_func_by_syntax(syntax.right, {"pre": "right"})}'
 
 
 def BlockStatement(syntax, info={}):

@@ -64,6 +64,11 @@ func TestFetchOrderBook(t *testing.T) {
 
 	fmt.Println(ex.FetchOrder(order["id"].(string), "ETH/BTC", nil))
 
+	openOrders, err := ex.FetchOpenOrders("ETH/BTC", 0, 20, nil)
+	if err == nil {
+		fmt.Println("openorders", openOrders)
+	}
+
 	if err == nil {
 		res, err := ex.CancelOrder(order["id"].(string), "ETH/BTC", nil)
 		fmt.Println(res, err)
