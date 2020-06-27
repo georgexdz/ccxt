@@ -1773,8 +1773,8 @@ module.exports = class kucoin extends Exchange {
         headers = (headers !== undefined) ? headers : {};
         if (Object.keys (query).length) {
             if (method !== 'GET') {
-                body = this.json (query);
-                endpart = body;
+                const jsonBody = this.json (query);
+                endpart = jsonBody;
                 headers['Content-Type'] = 'application/json';
             } else {
                 endpoint += '?' + this.urlencode (query);
