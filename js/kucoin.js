@@ -1773,14 +1773,13 @@ module.exports = class kucoin extends Exchange {
         headers = (headers !== undefined) ? headers : {};
         if (Object.keys (query).length) {
             if (method !== 'GET') {
-                const jsonBody = this.json (query);
-                endpart = jsonBody;
+                endpart = this.json (query);
                 headers['Content-Type'] = 'application/json';
             } else {
                 endpoint += '?' + this.urlencode (query);
             }
         }
-        const url = this.urls['api'][api] + endpoint;
+        const url = this.urls['api'][api].toString() + endpoint;
         if (api === 'private') {
             this.checkRequiredCredentials ();
             const timestamp = this.nonce ().toString ();
@@ -1793,7 +1792,7 @@ module.exports = class kucoin extends Exchange {
             const signature = this.hmac (this.encode (payload), this.encode (this.secret), 'sha256', 'base64');
             headers['KC-API-SIGN'] = this.decode (signature);
         }
-        return { 'url': url, 'method': method, 'body': body, 'headers': headers };
+        return { 'url': url, 'method': method, 'body': endpart, 'headers': headers };
     }
 
     handleErrors (code, reason, url, method, headers, body, response, requestHeaders, requestBody) {
