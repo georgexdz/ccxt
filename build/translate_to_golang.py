@@ -73,7 +73,7 @@ NIL_MAP = {
     'int64': '0',
     'error': 'nil'
 }
-NO_ERROR_RETURN_FUNCS = ('safe', 'tostring', 'milliseconds', 'uuid', 'account', 'ifthenelse', 'iso8601')
+ERROR_RETURN_FUNCS = [o.lower() for o in ['LoadMarkets', 'HMAC', 'JWT', 'ParseOrderBook', 'ParseBidsAsks', 'TOFloat', 'ApiFunc', 'MarketId']]
 SIDE = None
 
 
@@ -100,9 +100,8 @@ def ThisExpression(syntax, info={}):
 
 
 def MemberExpression(syntax, info={}):
-    method_name = call_func_by_syntax(syntax.property)
-
     info['error_check'] = False
+    method_name = call_func_by_syntax(syntax.property)
     if syntax.object.type == 'ThisExpression' and syntax.property.type == 'Identifier' and method_need_check_err(method_name):
         info['error_check'] = True
 
@@ -120,13 +119,11 @@ def MemberExpression(syntax, info={}):
         default = f'{obj}[{method_name}]'
 
         if syntax.property.type == 'Identifier' and syntax.property.name == 'split':
-            print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
-            print(info)
-            print(syntax)
             if 'arg_str' in info:
                 return f'strings.Split({obj}, {info["arg_str"]})'
 
-        if info.get('pre') in ['right', 'init', 'test']:
+        # if info.get('pre') in ['right', 'init', 'test']:
+        if info.get('pre') != 'left':
             default = f'self.Member({obj}, {method_name})'
         if info.get('pre') in ['left']:
             default = f'self.SetValue({obj}, {method_name})'
@@ -144,14 +141,19 @@ def CallExpression(syntax, info={}):
 
     pre_part = f'{call_func_by_syntax(syntax.callee, info)}'
 
+    if syntax.callee.type == 'MemberExpression' and syntax.callee.object.type == 'Identifier' and syntax.callee.object.name == 'Object':
+        if syntax.callee.property.name == 'keys':
+            return 'reflect.ValueOf(query).MapKeys()'
+
     # toString -> fmt.Sprintf
     if '(' in pre_part and ')' in pre_part:
         return pre_part
 
-    call_str = call_func_by_syntax(syntax.callee, info)
+    call_str = pre_part
     if re.findall(r'self\.(Private|Public)', call_str):
-        info = DEFAULT_FUNC_ARGS['apifunc']
-        arg_str += f', {info[1]}' * (info[0] - len(syntax.arguments) - 1)
+        info['error_check'] = True
+        info1 = DEFAULT_FUNC_ARGS['apifunc']
+        arg_str += f', {info1[1]}' * (info1[0] - len(syntax.arguments) - 1)
         return f'self.ApiFunc("{syntax.callee.property.name}", {arg_str})'
     # xx.split('_') -> string.Split(xx, '_')
     elif not call_str.endswith(')'):
@@ -161,16 +163,19 @@ def CallExpression(syntax, info={}):
 
 
 def ExpressionStatement(syntax, info={}):
-    if syntax.expression.type == 'CallExpression':
-        return f'_, err = {call_func_by_syntax(syntax.expression)}\n if err != nil {{\n return \n}}'
+    info['error_check'] = False
+    s = call_func_by_syntax(syntax.expression, info)
+
+    if info.get('error_check'):
+        return f'_, err = {s}\n if err != nil {{\n return \n}}'
     else:
-        return call_func_by_syntax(syntax.expression)
+        return s
 
 
 def method_need_check_err(name, info={}):
-    if any(name.lower().startswith(o) for o in NO_ERROR_RETURN_FUNCS):
-        return False
-    return True
+    if any(name.lower().startswith(o) for o in ERROR_RETURN_FUNCS):
+        return True
+    return False
 
 
 def VariableDeclarator(syntax, info={}):
@@ -183,12 +188,12 @@ def VariableDeclarator(syntax, info={}):
     if syntax.init.type == 'Identifier' and syntax.init.name == 'undefined':
         return f'var {left} interface{{}}'
     if syntax.id.type == 'ArrayPattern':
-        return f'{left} {operator} self.Unpack{len(syntax.id.elements)}({call_func_by_syntax(syntax.init, info)})'
+        return f'{left} {operator} self.Unpack{len(syntax.id.elements)}({call_func_by_syntax(syntax.init)})'
 
     right = call_func_by_syntax(syntax.init, info)
 
     if info.get('error_check'):
-        return f'{left}, err {operator} {right}\nif err!= nil {{\nreturn\n}}'
+        return f'{left}, err {operator} {right}\nif err != nil {{\nreturn nil, err\n}}'
     else:
         return f'{left} {operator} {right}'
 
@@ -255,7 +260,9 @@ def AssignmentExpression(syntax, info={}):
         arg3 = call_func_by_syntax(syntax.right, {"pre": "right"})
         return f'self.SetValue({arg1}, {arg2}, {arg3})'
     else:
-        return f'{call_func_by_syntax(syntax.left, {"pre": "left"})} {operator} {call_func_by_syntax(syntax.right, {"pre": "right"})}'
+        left = call_func_by_syntax(syntax.left, {"pre": "left"})
+        right = call_func_by_syntax(syntax.right, {"pre": "right"})
+        return f'{left} {operator} {right}'
 
 
 def BlockStatement(syntax, info={}):
@@ -753,7 +760,7 @@ def test():
     print(parse_by_syntax(code))
 
     code = '''
-    function sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
+    function     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
         //
         // the v2 URL is https://openapi-v2.kucoin.com/api/v1/endpoint
         //                                †                 ↑
@@ -770,14 +777,13 @@ def test():
         headers = (headers !== undefined) ? headers : {};
         if (Object.keys (query).length) {
             if (method !== 'GET') {
-                body = this.json (query);
-                endpart = body;
+                endpart = this.json (query);
                 headers['Content-Type'] = 'application/json';
             } else {
                 endpoint += '?' + this.urlencode (query);
             }
         }
-        const url = this.urls['api'][api] + endpoint;
+        const url = this.urls['api'][api].toString() + endpoint;
         if (api === 'private') {
             this.checkRequiredCredentials ();
             const timestamp = this.nonce ().toString ();
@@ -790,10 +796,51 @@ def test():
             const signature = this.hmac (this.encode (payload), this.encode (this.secret), 'sha256', 'base64');
             headers['KC-API-SIGN'] = this.decode (signature);
         }
-        return { 'url': url, 'method': method, 'body': body, 'headers': headers };
-    }
+        return { 'url': url, 'method': method, 'body': endpart, 'headers': headers };
+    } 
     '''
-    FUNC_LINES= 8
+    FUNC_LINES= 16
+    print(parse_by_syntax(code))
+
+    code = '''
+    function  sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
+        //
+        // the v2 URL is https://openapi-v2.kucoin.com/api/v1/endpoint
+        //                                †                 ↑
+        //
+        const versions = this.safeValue (this.options, 'versions', {});
+        const apiVersions = this.safeValue (versions, api);
+        const methodVersions = this.safeValue (apiVersions, method, {});
+        const defaultVersion = this.safeString (methodVersions, path, this.options['version']);
+        const version = this.safeString (params, 'version', defaultVersion);
+        params = this.omit (params, 'version');
+        let endpoint = '/api/' + version + '/' + this.implodeParams (path, params);
+        const query = this.omit (params, this.extractParams (path));
+        let endpart = '';
+        headers = (headers !== undefined) ? headers : {};
+        if (Object.keys (query).length) {
+            if (method !== 'GET') {
+                endpart = this.json (query);
+                headers['Content-Type'] = 'application/json';
+            } else {
+                endpoint += '?' + this.urlencode (query);
+            }
+        }
+        const url = this.urls['api'][api].toString() + endpoint;
+        if (api === 'private') {
+            this.checkRequiredCredentials ();
+            const timestamp = this.nonce ().toString ();
+            headers = this.extend ({
+                'KC-API-KEY': this.apiKey,
+                'KC-API-TIMESTAMP': timestamp,
+                'KC-API-PASSPHRASE': this.password,
+            }, headers);
+            const payload = timestamp + method + endpoint + endpart;
+            const signature = this.hmac (this.encode (payload), this.encode (this.secret), 'sha256', 'base64');
+            headers['KC-API-SIGN'] = this.decode (signature);
+        }
+        return { 'url': url, 'method': method, 'body': endpart, 'headers': headers };
+    }'''
     print(parse_by_syntax(code))
 
 def translate():

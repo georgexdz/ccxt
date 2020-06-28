@@ -102,7 +102,7 @@ type ExchangeInfo struct {
 	EnableRateLimit                  bool              `json:"enableRateLimit"`
 	RateLimit                        int               `json:"rateLimit"`
 	Has                              HasDescription    `json:"has"`
-	Urls                             Urls              `json:"urls"`
+	Urls                             map[string]interface{}
 	Api                              Apis              `json:"api"`
 	Timeframes                       map[string]string `json:"timeframes"`
 	Fees                             Fees              `json:"fees"`
@@ -509,9 +509,9 @@ type ExchangeInterface interface {
 
 type ExchangeInterfaceInternal interface {
 	ExchangeInterface
-	Sign(path string, api string, method string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (si *SignInfo, err error)
+	Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (interface{}, error)
 	ApiFuncDecode(function string) (path string, api string, method string, err error)
-	ApiFunc(function string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (response map[string]interface{}, err error)
+	ApiFunc(function string, params interface{}, headers map[string]interface{}, body interface{}) (response map[string]interface{}, err error)
 	Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response []byte, err error)
 	Request(path string, api string, method string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (response []byte, err error)
 	Describe() []byte
@@ -561,7 +561,7 @@ func (self *Exchange) FetchMarkets(params map[string]interface{}) ([]*Market, er
 	return nil, nil
 }
 
-func (self *Exchange) Sign(path string, api string, method string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (*SignInfo, error) {
+func (self *Exchange) Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (interface{}, error) {
 	return nil, nil
 }
 
@@ -725,7 +725,13 @@ func (self *Exchange) Request(
 	if err != nil {
 		return
 	}
-	return self.Child.Fetch(signInfo.Url, signInfo.Method, signInfo.Headers, signInfo.Body)
+	fmt.Println(signInfo)
+	return self.Child.Fetch(
+		self.Member(signInfo, "url").(string),
+		self.Member(signInfo, "method").(string),
+		self.Member(signInfo, "headers").(map[string]interface{}),
+		self.Member(signInfo, "body"),
+		)
 }
 
 func (self *Exchange) PrepareRequestHeaders(req* http.Request, headers map[string]interface{}) error {
@@ -833,13 +839,13 @@ func (self *Exchange) ApiFuncDecode(function string) (path string, api string, m
 	return
 }
 
-func (self *Exchange) ApiFunc(function string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (result map[string]interface{}, err error) {
+func (self *Exchange) ApiFunc(function string, params interface{}, headers map[string]interface{}, body interface{}) (result map[string]interface{}, err error) {
 	path, api, method, err := self.Child.ApiFuncDecode(function)
 	if err != nil {
 		return
 	}
 
-	resp, err := self.Child.Request(path, api, method, params, headers, body)
+	resp, err := self.Child.Request(path, api, method, params.(map[string]interface{}), headers, body)
 	if err != nil {
 		return
 	}
@@ -1121,18 +1127,21 @@ func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amou
 	return nil
 }
 
-func (self *Exchange) Extend(maps ...map[string]interface{}) (output map[string]interface{}) {
+
+func (self *Exchange) Extend(maps ...interface{}) interface{} {
 	size := len(maps)
 	if size == 0 {
-		return output
+		return maps
 	}
 	if size == 1 {
 		return maps[0]
 	}
-	output = make(map[string]interface{})
+	output := make(map[string]interface{})
 	for _, m := range maps {
-		for k, v := range m {
-			output[k] = v
+		if oneMap, ok := m.(map[string]interface{}); ok {
+			for k, v := range oneMap {
+				output[k] = v
+			}
 		}
 	}
 	return output
@@ -1257,7 +1266,7 @@ func (self *Exchange) SafeInteger(d interface{}, key string, defaultVal int64) (
 	return defaultVal
 }
 
-func (self *Exchange) SafeString(d interface{}, key string, DefaultValue string) (result string) {
+func (self *Exchange) SafeString(d interface{}, key string, DefaultValue interface{}) (result string) {
 	if d, ok := d.(map[string]interface{}); ok {
 		if val, ok := d[key]; ok {
 			if strVal, ok := val.(string); ok {
@@ -1265,7 +1274,7 @@ func (self *Exchange) SafeString(d interface{}, key string, DefaultValue string)
 		    }
 		}
 	}
-	return DefaultValue
+	return DefaultValue.(string)
 }
 
 func (self *Exchange) SafeFloat(d interface{}, key string, DefaultValue float64) (result float64) {
@@ -1340,7 +1349,7 @@ func Hash(payload, algo, encoding string) (string, error) {
 }
 
 // HMAC encodes the payload based on the available hashing algo
-func (self *Exchange) HMAC(payload, key, algo, encoding string) (string, error) {
+func (self *Exchange) Hmac(payload, key, algo, encoding string) (string, error) {
 	if hashers[algo] == nil {
 		return "", fmt.Errorf("HMAC: unsupported hashing algo \"%s\"", algo)
 	}
@@ -1421,11 +1430,15 @@ func (self *Exchange) SafeCurrencyCode(x interface{}) string {
 	return ""
 }
 
-func (self *Exchange) Length(l interface{}) int {
-	if val, ok := l.([]interface{}); ok {
-		return len(val)
+func (self *Exchange) Length(o interface{}) int {
+	switch reflect.TypeOf(o).Kind() {
+	case reflect.Slice:
+		return reflect.ValueOf(o).Len()
+	case reflect.Map:
+		return reflect.ValueOf(o).Len()
+	default:
+		return 0
 	}
-	return 0
 }
 
 func (self *Exchange) Member (o interface{}, idx interface{}) interface{} {
@@ -1501,5 +1514,56 @@ func (self *Exchange) TestNil (x interface{}) bool {
 func (self *Exchange) SetValue (x interface{}, k string, v interface{}) {
 	if m, ok := x.(map[string]interface{}); ok {
 		m[k] = v
+	}
+}
+
+func (self *Exchange) CheckRequiredCredentials () {
+
+}
+
+func (self *Exchange) Urlencode (i interface{}) string {
+	if m, ok := i.(map[string]interface{}); ok {
+		v := url.Values{}
+		for k, val := range m {
+			v.Add(k, fmt.Sprintf("%v", val))
+		}
+		return v.Encode()
+	}
+	return ""
+}
+
+func (self *Exchange) Json (i interface{}) string {
+	ret, err := json.Marshal(i)
+	if err == nil {
+		return string(ret)
+	}
+	return ""
+}
+
+func (self *Exchange) Encode (s interface{}) string {
+	return s.(string)
+}
+func (self *Exchange) Decode (s interface{}) interface{}  {
+	return s
+}
+
+func (self* Exchange) AddTwoInterface (a interface{}, b interface{}) interface{} {
+	if a == nil || b == nil {
+		return nil
+	}
+
+	switch a.(type) {
+	case string:
+		return a.(string) + b.(string)
+	case int:
+		return a.(int) + b.(int)
+	case int64:
+		return a.(int64) + b.(int64)
+	case float64:
+		return a.(float64) + b.(float64)
+	case float32:
+		return a.(float32) + b.(float32)
+	default:
+		 return nil
 	}
 }

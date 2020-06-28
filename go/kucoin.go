@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
+	"reflect"
 	"strings"
 )
 
@@ -51,6 +51,7 @@ func (self *Kucoin) InitDescribe() (err error) {
 	}
 
 	self.Options = self.DescribeMap["options"].(map[string]interface{})
+	self.Urls = self.DescribeMap["urls"].(map[string]interface{})
 	return
 }
 
@@ -178,49 +179,62 @@ func (self *Kucoin) Nonce() int64 {
 	return self.Milliseconds()
 }
 
-func (self *Kucoin) Sign(path string, api string, method string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (*SignInfo, error) {
+func (self *Kucoin) Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (ret interface{}, err error) {
+
+	versions := self.SafeValue(self.Options, "versions", map[string]interface{}{})
+
+	apiVersions := self.SafeValue(versions, api, nil)
+
+	methodVersions := self.SafeValue(apiVersions, method, map[string]interface{}{})
+
+	defaultVersion := self.SafeString(methodVersions, path, self.Member(self.Options, "version"))
+
+	version := self.SafeString(params, "version", defaultVersion)
+
 	params = self.Omit(params, "version")
-	endpoint := "/api/" + "v1" + "/" + self.ImplodeParams(path, params)
+
+	endpoint := "/api/" + version + "/" + self.ImplodeParams(path, params)
+
 	query := self.Omit(params, self.ExtractParams(path))
-	//var endpart []byte
 
-	if headers == nil {
-		headers = make(map[string]interface{})
-	}
-	if body == nil {
-		body = ""
-	}
+	endpart := ""
 
-	if len(query) > 0 {
-		if method != "GET" {
-			body, _ = json.Marshal(query)
-			//endpart = body
-			headers["Content-Type"] = "application/json"
+	headers = self.IfThenElse(self.ToBool(!self.TestNil(headers)), headers, map[string]interface{}{})
+
+	if self.ToBool(self.Length(reflect.ValueOf(query).MapKeys())) {
+		if self.ToBool(method != "GET") {
+			endpart = self.Json(query)
+			self.SetValue(headers, "Content-Type", "application/json")
 		} else {
-			v := url.Values{}
-			for k, val := range params {
-				v.Add(k, fmt.Sprintf("%v", val))
-			}
-			endpoint += "?" + v.Encode()
+			endpoint += "?" + self.Urlencode(query)
 		}
 	}
 
-	strUrl := self.ApiUrls[api] + endpoint
-	if api == "private" {
+	url := fmt.Sprintf("%v", self.Member(self.Member(self.Urls, "api"), api)) + endpoint
+
+	if self.ToBool(api == "private") {
+		self.CheckRequiredCredentials()
 		timestamp := fmt.Sprintf("%v", self.Nonce())
-		headers["KC-API-KEY"] = self.ApiKey
-		headers["KC-API-TIMESTAMP"] = timestamp
-		headers["KC-API-PASSPHRASE"] = self.Password
-
-		payload := fmt.Sprintf("%s%s%s%s", timestamp, method, endpoint, body)
-		signature, err := self.HMAC(payload, self.Secret, "sha256", "base64")
+		headers = self.Extend(map[string]interface{}{
+			"KC-API-KEY":        self.ApiKey,
+			"KC-API-TIMESTAMP":  timestamp,
+			"KC-API-PASSPHRASE": self.Password,
+		}, headers)
+		payload := timestamp + method + endpoint + endpart
+		signature, err := self.Hmac(self.Encode(payload), self.Encode(self.Secret), "sha256", "base64")
 		if err != nil {
-			return &SignInfo{}, err
+			return nil, err
 		}
-		headers["KC-API-SIGN"] = signature
+		self.SetValue(headers, "KC-API-SIGN", self.Decode(signature))
 	}
 
-	return &SignInfo{Url: strUrl, Method: method, Body: body, Headers: headers}, nil
+	return map[string]interface{}{
+		"url":     url,
+		"method":  method,
+		"body":    endpart,
+		"headers": headers,
+	}, nil
+
 }
 
 func (self *Kucoin) FetchMarkets(params map[string]interface{}) ([]*Market, error) {

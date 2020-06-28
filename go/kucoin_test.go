@@ -29,6 +29,12 @@ func get_test_config(ex *Kucoin) {
 	fmt.Println(data)
 
 	if json_config, ok := data.(map[string]interface{}); ok {
+        ex.Urls = map[string]interface{}{
+        	"api": map[string]interface{}{
+        		"public": json_config["url"],
+        		"private": json_config["url"],
+			},
+        }
 		ex.ApiUrls["private"] = json_config["url"].(string)
 		ex.ApiUrls["public"] = json_config["url"].(string)
 		ex.ApiKey = json_config["key"].(string)
@@ -61,6 +67,9 @@ func TestFetchOrderBook(t *testing.T) {
 	ex.FetchBalance(nil)
 
 	order, err := ex.CreateOrder("ETH/BTC", "limit", "buy", 0.0001, 0.024, nil)
+	if err != nil {
+		return
+	}
 
 	fmt.Println(ex.FetchOrder(order["id"].(string), "ETH/BTC", nil))
 
