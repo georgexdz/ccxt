@@ -1,4 +1,4 @@
-module github.com/georgexdz/ccxt/go
+module ccxt/go
 
 go 1.14
 
