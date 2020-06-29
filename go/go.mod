@@ -1,4 +1,4 @@
-module ccxt/go
+module ccxt-master/go
 
 go 1.14
 
