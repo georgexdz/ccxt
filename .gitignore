@@ -33,3 +33,5 @@ python/LICENSE.txt
 .env
 *.swp
 go/test_config.json
+go/go.sum
+go/go.mod
