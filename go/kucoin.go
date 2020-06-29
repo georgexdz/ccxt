@@ -1,10 +1,10 @@
 package kucoin
 
 import (
-	. "ccxt-master/go/base"
 	"encoding/json"
 	"errors"
 	"fmt"
+	. "github.com/georgexdz/ccxt/go/base"
 	"reflect"
 	"strings"
 )
