@@ -540,9 +540,8 @@ type Exchange struct {
 func (self *Exchange) Init(config *ExchangeConfig) (err error) {
 	self.Child = self
 
-	proxy, err := url.Parse("http://127.0.0.1:10809")
 	tr := &http.Transport{
-		Proxy:           http.ProxyURL(proxy),
+		Proxy:           http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	self.Client = &http.Client{
