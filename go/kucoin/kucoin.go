@@ -263,7 +263,7 @@ func (self *Kucoin) FetchMarkets(params map[string]interface{}) ([]*Market, erro
 	return result, nil
 }
 
-func (self *Kucoin) FetchOrderBook(symbol string, limit int, params map[string]interface{}) (orderBook interface{}, err error) {
+func (self *Kucoin) FetchOrderBook(symbol string, limit int, params map[string]interface{}) (orderBook *OrderBook, err error) {
 	level := self.SafeInteger(params, "level", 2)
 
 	levelLimit := fmt.Sprintf("%v", level)

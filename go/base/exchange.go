@@ -471,7 +471,7 @@ type ExchangeInterface interface {
 	// FetchTickers(symbols []string, params map[string]interface{}) (map[string]Ticker, error)
 	// FetchTicker(symbol string, params map[string]interface{}) (Ticker, error)
 	// FetchOHLCV(symbol, tf string, since *JSONTime, limit *int, params map[string]interface{}) ([]OHLCV, error)
-	// FetchOrderBook(symbol string, limit *int, params map[string]interface{}) (OrderBook, error)
+	FetchOrderBook(symbol string, limit int, params map[string]interface{}) (*OrderBook, error)
 	// FetchL2OrderBook(symbol string, limit *int, params map[string]interface{}) (OrderBook, error)
 	// FetchTrades(symbol string, since *JSONTime, params map[string]interface{}) ([]Trade, error)
 	// FetchOrder(id string, symbol *string, params map[string]interface{}) (Order, error)
@@ -558,6 +558,9 @@ func (self *Exchange) Describe() ([]byte) {
 
 func (self *Exchange) FetchMarkets(params map[string]interface{}) ([]*Market, error) {
 	return nil, nil
+}
+func (self *Exchange) FetchOrderBook(symbol string, limit int, params map[string]interface{}) (*OrderBook, error) {
+	return nil, errors.New("FetchOrderBook not supported yet")
 }
 
 func (self *Exchange) Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (interface{}, error) {
@@ -1225,7 +1228,7 @@ func NestedMapLookup(m map[string]interface{}, ks ...string) (rval interface{}, 
 	}
 }
 
-func (self *Exchange) ParseOrderBook(orderBook interface{}, timeStamp int64, bidsKey string, asksKey string, priceKey int64, amountKey int64) (interface{}, error) {
+func (self *Exchange) ParseOrderBook(orderBook interface{}, timeStamp int64, bidsKey string, asksKey string, priceKey int64, amountKey int64) (*OrderBook, error) {
 	var result OrderBook
 
 	if orderBookMap, ok := orderBook.(map[string]interface{}); ok {
@@ -1248,7 +1251,7 @@ func (self *Exchange) ParseOrderBook(orderBook interface{}, timeStamp int64, bid
 		result.Timestamp = timeStamp
 		// result.Datetime = time.Unix(timeStamp/1000, 0).Format("2006-01-02 15:04:05")
 
-		return result, nil
+		return &result, nil
 	}
 
 	return nil, nil
