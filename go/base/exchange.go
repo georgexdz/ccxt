@@ -727,7 +727,6 @@ func (self *Exchange) Request(
 	if err != nil {
 		return
 	}
-	fmt.Println(signInfo)
 	return self.Child.Fetch(
 		self.Member(signInfo, "url").(string),
 		self.Member(signInfo, "method").(string),
@@ -1316,7 +1315,6 @@ func (self *Exchange) ExtractParams(s string) (result []string) {
 	matches := r.FindAllStringSubmatch(s, -1)
 	for _, v := range matches {
 		result = append(result, v[1])
-		fmt.Println(v[1])
 	}
 	return result
 }
