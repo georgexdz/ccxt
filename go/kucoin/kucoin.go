@@ -270,11 +270,11 @@ func (self *Kucoin) FetchOrderBook(symbol string, limit int, params map[string]i
 
 	if self.ToBool(self.TestNil(levelLimit)) {
 		if self.ToBool(self.TestNil(limit)) {
-			if self.ToBool(limit != 20 && limit != 100) {
-				err = errors.New(self.Id + " fetchOrderBook limit argument must be undefined, 20 or 100")
-				return
+			if limit <= 20 {
+				levelLimit += "_" + fmt.Sprintf("%v", 20)
+			} else if limit <= 100 {
+				levelLimit += "_" + fmt.Sprintf("%v", 100)
 			}
-			levelLimit += "_" + fmt.Sprintf("%v", limit)
 		}
 	}
 
