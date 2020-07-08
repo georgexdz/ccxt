@@ -91,6 +91,7 @@ type ExchangeConfig struct {
 	Timeout         time.Duration `json:"timeout"`
 	EnableRateLimit bool          `json:"enableRateLimit"`
 	Test            bool          `json:"test"`
+	Verbose         bool          `json:"verbose"`
 }
 
 // ExchangeInfo for the exchange
@@ -99,7 +100,6 @@ type ExchangeInfo struct {
 	Name                             string         `json:"name"`
 	Countries                        StringSlice    `json:"countries"`
 	Version                          string         `json:"version"`
-	EnableRateLimit                  bool           `json:"enableRateLimit"`
 	RateLimit                        int            `json:"rateLimit"`
 	Has                              HasDescription `json:"has"`
 	Urls                             map[string]interface{}
@@ -110,7 +110,6 @@ type ExchangeInfo struct {
 	Header                           http.Header       `json:"header"`
 	Proxy                            string            `json:"proxy"`
 	Origin                           string            `json:"origin"`
-	Verbose                          bool              `json:"verbose"`
 	Limits                           Limits            `json:"limits"`
 	Precision                        Precision         `json:"precision"`
 	Exceptions                       Exceptions        `json:"exceptions"`
@@ -328,10 +327,10 @@ type Order struct {
 	Info          interface{} `json:"info"`
 }
 
-func (o Order) String() string {
-	return fmt.Sprintf("%s %f %s @%f (filled: %f)",
-		o.Side, o.Amount, o.Symbol, o.Price, o.Filled)
-}
+//func (o Order) String() string {
+//	return fmt.Sprintf("%s %f %s @%f (filled: %f)",
+//		o.Side, o.Amount, o.Symbol, o.Price, o.Filled)
+//}
 
 func (o *Order) InitFromMap(m map[string]interface{}) (result *Order, err error) {
 	defer func() {
@@ -341,6 +340,9 @@ func (o *Order) InitFromMap(m map[string]interface{}) (result *Order, err error)
 	}()
 
 	for k, v := range m {
+		if v == nil {
+			continue
+		}
 		switch k {
 		case "id":
 			o.Id = v.(string)
@@ -525,7 +527,7 @@ type ExchangeInterface interface {
 	// FetchOpenOrders(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Order, error)
 	// FetchClosedOrders(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Order, error)
 	// FetchMyTrades(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Trade, error)
-	// FetchBalance(params map[string]interface{}) (Balances, error)
+	FetchBalance(params map[string]interface{}) (*Account, error)
 	//FetchCurrencies() (map[string]*Currency, error)
 	FetchMarkets(params map[string]interface{}) ([]*Market, error)
 
@@ -553,6 +555,11 @@ type ExchangeInterface interface {
 	// CreateLimitSellOrder(symbol string, amount float64, price *float64, params map[string]interface{}) (Order, error)
 	// CreateMarketBuyOrder(symbol string, amount float64, params map[string]interface{}) (Order, error)
 	// CreateMarketSellOrder(symbol string, amount float64, params map[string]interface{}) (Order, error)
+
+	SetApiKey(string)
+	SetSecret(string)
+	SetPassword(string)
+	SetUid(string)
 }
 
 type ExchangeInterfaceInternal interface {
@@ -587,6 +594,10 @@ type Exchange struct {
 
 func (self *Exchange) Init(config *ExchangeConfig) (err error) {
 	self.Child = self
+
+	if config != nil {
+		self.ExchangeConfig = *config
+	}
 
 	tr := &http.Transport{
 		Proxy:           http.ProxyFromEnvironment,
@@ -1616,8 +1627,12 @@ func (self *Exchange) AddTwoInterface(a interface{}, b interface{}) interface{} 
 	}
 }
 
+func (self *Exchange) FetchBalance(params map[string]interface{}) (*Account, error) {
+	return nil, fmt.Errorf("%s FetchBalance not supported yet", self.Id)
+}
+
 func (self *Exchange) CreateOrder(symbol string, otype string, side string, amount float64, price float64, params map[string]interface{}) (*Order, error) {
-	return nil, fmt.Errorf("%s CreateOrder not supported yet")
+	return nil, fmt.Errorf("%s CreateOrder not supported yet", self.Id)
 }
 
 func (self *Exchange) LimitBuy(symbol string, price, amount float64, params map[string]interface{}) (*Order, error) {
@@ -1626,4 +1641,17 @@ func (self *Exchange) LimitBuy(symbol string, price, amount float64, params map[
 
 func (self *Exchange) LimitSell(symbol string, price, amount float64, params map[string]interface{}) (*Order, error) {
 	return self.Child.CreateOrder(symbol, "limit", "sell", amount, price, params)
+}
+
+func (self *Exchange) SetApiKey(s string) {
+	self.ApiKey = s
+}
+func (self *Exchange) SetSecret(s string) {
+	self.Secret = s
+}
+func (self *Exchange) SetPassword(s string) {
+	self.Password = s
+}
+func (self *Exchange) SetUid(s string) {
+	// TODO
 }
