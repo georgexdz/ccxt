@@ -1499,15 +1499,15 @@ func (self *Exchange) IfThenElse(condition bool, a interface{}, b interface{}) i
 func (self *Exchange) TestNil (x interface{}) bool {
 	switch x.(type) {
 	case string:
-		return x.(string) == ""
+		return x.(string) != ""
 	case int:
-		return x.(int) == 0
+		return x.(int) != 0
 	case int64:
-		return x.(int64) == 0
+		return x.(int64) != 0
 	case float64:
-		return x.(float64) == 0.
+		return x.(float64) != 0.
 	case float32:
-		return x.(float32) == 0.
+		return x.(float32) != 0.
 	default:
 		return true
 	}
