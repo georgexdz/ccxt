@@ -334,8 +334,8 @@ func (o Order) String() string {
 
 // OrderBook struct
 type OrderBook struct {
-	Asks      [][]float64
-	Bids      [][]float64
+	Asks      [][2]float64
+	Bids      [][2]float64
 	Timestamp int64
 	Datetime  string
 	Nonce     string
@@ -1059,7 +1059,7 @@ func (self *Exchange) SetMarkets(markets []Market, currencies map[string]Currenc
 }
 */
 
-func SortSliceByIndex(s [][]float64, idx int, descending bool) {
+func SortSliceByIndex(s [][2]float64, idx int, descending bool) {
 	if !descending {
 		sort.Slice(s, func(i, j int) bool {
 			// edge cases
@@ -1101,7 +1101,7 @@ func ToFloat(x interface{}) (float64, error) {
 	return 0, nil
 }
 
-func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amountKey int64, out *[][]float64) error {
+func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amountKey int64, out *[][2]float64) error {
 	if len(bidsAsks) == 0 {
 		return nil
 	}
@@ -1115,7 +1115,7 @@ func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amou
 					priceF, err1 := ToFloat(price)
 					amountF, err2 := ToFloat(amount)
 					if err1 == nil && err2 == nil {
-						*out = append(*out, []float64{priceF, amountF})
+						*out = append(*out, [2]float64{priceF, amountF})
 					}
 				}
 			}
