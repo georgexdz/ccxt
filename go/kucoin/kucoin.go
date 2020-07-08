@@ -363,7 +363,7 @@ func (self *Kucoin) FetchBalance(params map[string]interface{}) (balanceResult *
 
 }
 
-func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount float64, price float64, params map[string]interface{}) (order map[string]interface{}, err error) {
+func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount float64, price float64, params map[string]interface{}) (result *Order, err error) {
 	_, err = self.LoadMarkets()
 	if err != nil {
 		return
@@ -403,7 +403,7 @@ func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount f
 
 	timestamp := self.Milliseconds()
 
-	order = map[string]interface{}{
+	order := map[string]interface{}{
 		"id":            self.SafeString(data, "orderId", ""),
 		"symbol":        symbol,
 		"type":          typ,
@@ -424,8 +424,7 @@ func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount f
 		self.SetValue(order, "amount", amount)
 	}
 
-	return order, nil
-
+	return (&Order{}).InitFromMap(order)
 }
 
 func (self *Kucoin) FetchOrder(id string, symbol string, params map[string]interface{}) (order interface{}, err error) {

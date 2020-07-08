@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dgrijalva/jwt-go"
+	"github.com/satori/go.uuid"
 	"hash"
 	"io/ioutil"
 	"log"
@@ -25,7 +26,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"github.com/satori/go.uuid"
 )
 
 type JSONTime int64
@@ -85,7 +85,7 @@ type MinMax struct {
 // ExchangeConfig for main configuration
 // Timeout takes json value in milliseconds
 type ExchangeConfig struct {
-	ApiKey          string        `json:"apiKey"`
+	ApiKey          string `json:"apiKey"`
 	Password        string
 	Secret          string        `json:"secret"`
 	Timeout         time.Duration `json:"timeout"`
@@ -95,13 +95,13 @@ type ExchangeConfig struct {
 
 // ExchangeInfo for the exchange
 type ExchangeInfo struct {
-	Id                               string            `json:"id"`
-	Name                             string            `json:"name"`
-	Countries                        StringSlice       `json:"countries"`
-	Version                          string            `json:"version"`
-	EnableRateLimit                  bool              `json:"enableRateLimit"`
-	RateLimit                        int               `json:"rateLimit"`
-	Has                              HasDescription    `json:"has"`
+	Id                               string         `json:"id"`
+	Name                             string         `json:"name"`
+	Countries                        StringSlice    `json:"countries"`
+	Version                          string         `json:"version"`
+	EnableRateLimit                  bool           `json:"enableRateLimit"`
+	RateLimit                        int            `json:"rateLimit"`
+	Has                              HasDescription `json:"has"`
 	Urls                             map[string]interface{}
 	Api                              Apis              `json:"api"`
 	Timeframes                       map[string]string `json:"timeframes"`
@@ -311,25 +311,71 @@ type Balance struct {
 
 // Order structure
 type Order struct {
-	Id        string      `json:"id"`
-	Timestamp JSONTime    `json:"timestamp"`
-	Datetime  string      `json:"datetime"`
-	Symbol    string      `json:"symbol"`
-	Status    string      `json:"status"`
-	Type      string      `json:"type"`
-	Side      string      `json:"side"`
-	Price     float64     `json:"price"`
-	Cost      float64     `json:"cost"`
-	Amount    float64     `json:"amount"`
-	Filled    float64     `json:"filled"`
-	Remaining float64     `json:"remaining"`
-	Fee       float64     `json:"fee"`
-	Info      interface{} `json:"info"`
+	Id            string      `json:"id"`
+	ClientOrderId string      `json:"clientOrderId"`
+	Timestamp     int64       `json:"timestamp"`
+	Datetime      string      `json:"datetime"`
+	Symbol        string      `json:"symbol"`
+	Status        string      `json:"status"`
+	Type          string      `json:"type"`
+	Side          string      `json:"side"`
+	Price         float64     `json:"price"`
+	Cost          float64     `json:"cost"`
+	Amount        float64     `json:"amount"`
+	Filled        float64     `json:"filled"`
+	Remaining     float64     `json:"remaining"`
+	Fee           float64     `json:"fee"`
+	Info          interface{} `json:"info"`
 }
 
 func (o Order) String() string {
 	return fmt.Sprintf("%s %f %s @%f (filled: %f)",
 		o.Side, o.Amount, o.Symbol, o.Price, o.Filled)
+}
+
+func (o *Order) InitFromMap(m map[string]interface{}) (result *Order, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("error order: %s: %v", fmt.Sprint(m), r)
+		}
+	}()
+
+	for k, v := range m {
+		switch k {
+		case "id":
+			o.Id = v.(string)
+		case "symbol":
+			o.Symbol = v.(string)
+		case "type":
+			o.Type = v.(string)
+		case "side":
+			o.Side = v.(string)
+		case "price":
+			o.Price = v.(float64)
+		case "cost":
+			o.Cost = v.(float64)
+		case "filled":
+			o.Filled = v.(float64)
+		case "remaining":
+			o.Remaining = v.(float64)
+		case "timestamp":
+			o.Timestamp = v.(int64)
+		case "datetime":
+			o.Datetime = v.(string)
+		case "fee":
+			o.Fee = v.(float64)
+		case "status":
+			o.Status = v.(string)
+		case "clientOrderId":
+			o.ClientOrderId = v.(string)
+		case "info":
+			o.Info = v
+		default:
+			// ignore
+		}
+	}
+	result = o
+	return
 }
 
 // OrderBook struct
@@ -423,8 +469,8 @@ type DepositAddress struct {
 }
 
 type ApiDecode struct {
-	Path string
-	Api string
+	Path   string
+	Api    string
 	Method string
 }
 
@@ -483,7 +529,9 @@ type ExchangeInterface interface {
 	//FetchCurrencies() (map[string]*Currency, error)
 	FetchMarkets(params map[string]interface{}) ([]*Market, error)
 
-	// CreateOrder(symbol, t, side string, amount float64, price *float64, params map[string]interface{}) (Order, error)
+	CreateOrder(symbol, otype, side string, amount float64, price float64, params map[string]interface{}) (*Order, error)
+	LimitBuy(symbol string, price, amount float64, params map[string]interface{}) (*Order, error)
+	LimitSell(symbol string, price, amount float64, params map[string]interface{}) (*Order, error)
 	// CancelOrder(id string, symbol *string, params map[string]interface{}) error
 
 	// Describe() []byte
@@ -530,11 +578,11 @@ type Exchange struct {
 	Currencies     map[string]*Currency
 	CurrenciesById map[string]*Currency
 
-	Child ExchangeInterfaceInternal
+	Child         ExchangeInterfaceInternal
 	ApiDecodeInfo map[string]*ApiDecode
-	ApiUrls map[string]string
-	DescribeMap map[string]interface{}
-	Options map[string]interface{}
+	ApiUrls       map[string]string
+	DescribeMap   map[string]interface{}
+	Options       map[string]interface{}
 }
 
 func (self *Exchange) Init(config *ExchangeConfig) (err error) {
@@ -552,7 +600,7 @@ func (self *Exchange) Init(config *ExchangeConfig) (err error) {
 	return
 }
 
-func (self *Exchange) Describe() ([]byte) {
+func (self *Exchange) Describe() []byte {
 	return nil
 }
 
@@ -732,10 +780,10 @@ func (self *Exchange) Request(
 		self.Member(signInfo, "method").(string),
 		self.Member(signInfo, "headers").(map[string]interface{}),
 		self.Member(signInfo, "body"),
-		)
+	)
 }
 
-func (self *Exchange) PrepareRequestHeaders(req* http.Request, headers map[string]interface{}) error {
+func (self *Exchange) PrepareRequestHeaders(req *http.Request, headers map[string]interface{}) error {
 	//req.Header.Set("Accept-Encoding", "gzip, deflate")
 
 	for k, v := range headers {
@@ -793,16 +841,16 @@ func (self *Exchange) Fetch(url string, method string, headers map[string]interf
 }
 
 func (self *Exchange) RegSplit(text string, delimeter string) (result []string) {
-    reg := regexp.MustCompile(delimeter)
-    indexes := reg.FindAllStringIndex(text, -1)
-    laststart := 0
-    result = make([]string, len(indexes) + 1)
-    for i, element := range indexes {
-            result[i] = text[laststart:element[0]]
-            laststart = element[1]
-    }
-    result[len(indexes)] = text[laststart:len(text)]
-    return result
+	reg := regexp.MustCompile(delimeter)
+	indexes := reg.FindAllStringIndex(text, -1)
+	laststart := 0
+	result = make([]string, len(indexes)+1)
+	for i, element := range indexes {
+		result[i] = text[laststart:element[0]]
+		laststart = element[1]
+	}
+	result[len(indexes)] = text[laststart:len(text)]
+	return result
 }
 
 func (self *Exchange) DefineRestApi() (err error) {
@@ -810,7 +858,7 @@ func (self *Exchange) DefineRestApi() (err error) {
 
 	if jsonApiInfo, ok := self.DescribeMap["api"].(map[string]interface{}); ok {
 		for strApi, apiInfo := range jsonApiInfo {
-			if methodInfo, ok:= apiInfo.(map[string]interface{}); ok {
+			if methodInfo, ok := apiInfo.(map[string]interface{}); ok {
 				for strMethod, methodInfo := range methodInfo {
 					if pathList, ok := methodInfo.([]interface{}); ok {
 						for _, path := range pathList {
@@ -1128,7 +1176,6 @@ func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amou
 	return nil
 }
 
-
 func (self *Exchange) Extend(maps ...interface{}) interface{} {
 	size := len(maps)
 	if size == 0 {
@@ -1261,9 +1308,9 @@ func (self *Exchange) SafeInteger(d interface{}, key string, defaultVal int64) (
 		if val, ok := d[key]; ok {
 			if intVal, ok := val.(int64); ok {
 				return intVal
-				}
 			}
 		}
+	}
 	return defaultVal
 }
 
@@ -1271,8 +1318,8 @@ func (self *Exchange) SafeString(d interface{}, key string, DefaultValue interfa
 	if d, ok := d.(map[string]interface{}); ok {
 		if val, ok := d[key]; ok {
 			if strVal, ok := val.(string); ok {
-		        return strVal
-		    }
+				return strVal
+			}
 		}
 	}
 	return DefaultValue.(string)
@@ -1322,11 +1369,12 @@ func (self *Exchange) ExtractParams(s string) (result []string) {
 func (self *Exchange) ImplodeParams(s string, params interface{}) string {
 	if paramsMap, ok := params.(map[string]interface{}); ok {
 		for k, v := range paramsMap {
-			s = strings.ReplaceAll(s, "{" + k + "}", fmt.Sprintf("%v", v))
+			s = strings.ReplaceAll(s, "{"+k+"}", fmt.Sprintf("%v", v))
 		}
 	}
 	return s
 }
+
 var hashers = map[string]func() hash.Hash{
 	"sha1":   sha1.New,
 	"sha256": sha256.New,
@@ -1415,10 +1463,10 @@ func (self *Exchange) AmountToPrecision(symbol string, amount float64) string {
 	return ret
 }
 
-func (self *Exchange) Account() (map[string]interface{}) {
-	return map[string]interface{} {
-		"free": nil,
-		"used": nil,
+func (self *Exchange) Account() map[string]interface{} {
+	return map[string]interface{}{
+		"free":  nil,
+		"used":  nil,
 		"total": nil,
 	}
 }
@@ -1441,20 +1489,20 @@ func (self *Exchange) Length(o interface{}) int {
 	}
 }
 
-func (self *Exchange) Member (o interface{}, idx interface{}) interface{} {
+func (self *Exchange) Member(o interface{}, idx interface{}) interface{} {
 	switch reflect.TypeOf(o).Kind() {
-    case reflect.Slice:
-        return reflect.ValueOf(o).Index(idx.(int)).Interface()
-    case reflect.Map:
-        return reflect.ValueOf(o).MapIndex(reflect.ValueOf(idx)).Interface()
-    case reflect.Struct:
-        return reflect.ValueOf(o).FieldByName(idx.(string)).Interface()
-    }
+	case reflect.Slice:
+		return reflect.ValueOf(o).Index(idx.(int)).Interface()
+	case reflect.Map:
+		return reflect.ValueOf(o).MapIndex(reflect.ValueOf(idx)).Interface()
+	case reflect.Struct:
+		return reflect.ValueOf(o).FieldByName(idx.(string)).Interface()
+	}
 
 	return nil
 }
 
-func (self *Exchange) Market (symbol string) (*Market){
+func (self *Exchange) Market(symbol string) *Market {
 	if self.Markets == nil {
 		return nil
 	}
@@ -1467,7 +1515,7 @@ func (self *Exchange) Market (symbol string) (*Market){
 	}
 }
 
-func (self *Exchange)Unpack2(l interface{}) (interface{}, interface{}) {
+func (self *Exchange) Unpack2(l interface{}) (interface{}, interface{}) {
 	switch l.(type) {
 	case []string:
 		if ll, ok := l.([]string); ok {
@@ -1484,17 +1532,17 @@ func (self *Exchange)Unpack2(l interface{}) (interface{}, interface{}) {
 	default:
 		return nil, nil
 	}
-	return  nil,nil
+	return nil, nil
 }
 
 func (self *Exchange) IfThenElse(condition bool, a interface{}, b interface{}) interface{} {
-    if condition {
-        return a
-    }
-    return b
+	if condition {
+		return a
+	}
+	return b
 }
 
-func (self *Exchange) TestNil (x interface{}) bool {
+func (self *Exchange) TestNil(x interface{}) bool {
 	switch x.(type) {
 	case string:
 		return x.(string) != ""
@@ -1511,17 +1559,17 @@ func (self *Exchange) TestNil (x interface{}) bool {
 	}
 }
 
-func (self *Exchange) SetValue (x interface{}, k string, v interface{}) {
+func (self *Exchange) SetValue(x interface{}, k string, v interface{}) {
 	if m, ok := x.(map[string]interface{}); ok {
 		m[k] = v
 	}
 }
 
-func (self *Exchange) CheckRequiredCredentials () {
+func (self *Exchange) CheckRequiredCredentials() {
 
 }
 
-func (self *Exchange) Urlencode (i interface{}) string {
+func (self *Exchange) Urlencode(i interface{}) string {
 	if m, ok := i.(map[string]interface{}); ok {
 		v := url.Values{}
 		for k, val := range m {
@@ -1532,7 +1580,7 @@ func (self *Exchange) Urlencode (i interface{}) string {
 	return ""
 }
 
-func (self *Exchange) Json (i interface{}) string {
+func (self *Exchange) Json(i interface{}) string {
 	ret, err := json.Marshal(i)
 	if err == nil {
 		return string(ret)
@@ -1540,14 +1588,14 @@ func (self *Exchange) Json (i interface{}) string {
 	return ""
 }
 
-func (self *Exchange) Encode (s interface{}) string {
+func (self *Exchange) Encode(s interface{}) string {
 	return s.(string)
 }
-func (self *Exchange) Decode (s interface{}) interface{}  {
+func (self *Exchange) Decode(s interface{}) interface{} {
 	return s
 }
 
-func (self* Exchange) AddTwoInterface (a interface{}, b interface{}) interface{} {
+func (self *Exchange) AddTwoInterface(a interface{}, b interface{}) interface{} {
 	if a == nil || b == nil {
 		return nil
 	}
@@ -1564,6 +1612,18 @@ func (self* Exchange) AddTwoInterface (a interface{}, b interface{}) interface{}
 	case float32:
 		return a.(float32) + b.(float32)
 	default:
-		 return nil
+		return nil
 	}
+}
+
+func (self *Exchange) CreateOrder(symbol string, otype string, side string, amount float64, price float64, params map[string]interface{}) (*Order, error) {
+	return nil, fmt.Errorf("%s CreateOrder not supported yet")
+}
+
+func (self *Exchange) LimitBuy(symbol string, price, amount float64, params map[string]interface{}) (*Order, error) {
+	return self.Child.CreateOrder(symbol, "limit", "buy", amount, price, params)
+}
+
+func (self *Exchange) LimitSell(symbol string, price, amount float64, params map[string]interface{}) (*Order, error) {
+	return self.Child.CreateOrder(symbol, "limit", "sell", amount, price, params)
 }
