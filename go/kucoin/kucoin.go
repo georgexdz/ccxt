@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	. "github.com/georgexdz/ccxt/go/base"
 	"reflect"
 	"strings"
+
+	. "github.com/georgexdz/ccxt/go/base"
 )
 
 type Kucoin struct {
@@ -427,7 +428,7 @@ func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount f
 	return (&Order{}).InitFromMap(order)
 }
 
-func (self *Kucoin) FetchOrder(id string, symbol string, params map[string]interface{}) (order interface{}, err error) {
+func (self *Kucoin) FetchOrder(id string, symbol string, params map[string]interface{}) (order *Order, err error) {
 	_, err = self.LoadMarkets()
 	if err != nil {
 		return
@@ -450,11 +451,11 @@ func (self *Kucoin) FetchOrder(id string, symbol string, params map[string]inter
 
 	responseData := self.Member(response, "data")
 
-	return self.ParseOrder(responseData, market), nil
+	return (&Order{}).InitFromMap(self.ParseOrder(responseData, market))
 
 }
 
-func (self *Kucoin) ParseOrder(order interface{}, market interface{}) interface{} {
+func (self *Kucoin) ParseOrder(order interface{}, market interface{}) map[string]interface{} {
 	var symbol interface{}
 
 	marketId := self.SafeString(order, "symbol", "")
@@ -563,7 +564,7 @@ func (self *Kucoin) CancelOrder(id string, symbol string, params map[string]inte
 
 }
 
-func (self *Kucoin) FetchOrdersByStatus(status string, symbol string, since int64, limit int64, params map[string]interface{}) (orders interface{}, err error) {
+func (self *Kucoin) FetchOrdersByStatus(status string, symbol string, since int64, limit int64, params map[string]interface{}) (result interface{}, err error) {
 
 	_, err = self.LoadMarkets()
 	if err != nil {
@@ -596,14 +597,15 @@ func (self *Kucoin) FetchOrdersByStatus(status string, symbol string, since int6
 
 	responseData := self.SafeValue(response, "data", map[string]interface{}{})
 
-	orders = self.SafeValue(responseData, "items", []interface{}{})
+	orders := self.SafeValue(responseData, "items", []interface{}{})
 
-	//return self.ParseOrders(orders, market, since, limit), nil
-	return orders, nil
-
+	return self.ParseOrders(orders, market, since, limit), nil
 }
 
-func (self *Kucoin) FetchOpenOrders(symbol string, since int64, limit int64, params map[string]interface{}) (orders interface{}, err error) {
-
-	return self.FetchOrdersByStatus("active", symbol, since, limit, params)
+func (self *Kucoin) FetchOpenOrders(symbol string, since int64, limit int64, params map[string]interface{}) (orders []*Order, err error) {
+	resp, err := self.FetchOrdersByStatus("active", symbol, since, limit, params)
+	if err != nil {
+		return
+	}
+	return self.ToOrders(resp)
 }

@@ -13,8 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dgrijalva/jwt-go"
-	"github.com/satori/go.uuid"
 	"hash"
 	"io/ioutil"
 	"log"
@@ -22,10 +20,14 @@ import (
 	"net/url"
 	"reflect"
 	"regexp"
+	//"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dgrijalva/jwt-go"
+	"github.com/satori/go.uuid"
 )
 
 type JSONTime int64
@@ -337,6 +339,7 @@ func (o *Order) InitFromMap(m map[string]interface{}) (result *Order, err error)
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("error order: %s: %v", fmt.Sprint(m), r)
+			//debug.PrintStack()
 		}
 	}()
 
@@ -355,6 +358,8 @@ func (o *Order) InitFromMap(m map[string]interface{}) (result *Order, err error)
 			o.Side = v.(string)
 		case "price":
 			o.Price = v.(float64)
+		case "amount":
+			o.Amount = v.(float64)
 		case "cost":
 			o.Cost = v.(float64)
 		case "filled":
@@ -366,7 +371,8 @@ func (o *Order) InitFromMap(m map[string]interface{}) (result *Order, err error)
 		case "datetime":
 			o.Datetime = v.(string)
 		case "fee":
-			o.Fee = v.(float64)
+			// NOTE: fee 有可能是字典也可能是浮点, 暂时无视
+			//o.Fee = v.(float64)
 		case "status":
 			o.Status = v.(string)
 		case "clientOrderId":
@@ -523,9 +529,9 @@ type ExchangeInterface interface {
 	FetchOrderBook(symbol string, limit int, params map[string]interface{}) (*OrderBook, error)
 	// FetchL2OrderBook(symbol string, limit *int, params map[string]interface{}) (OrderBook, error)
 	// FetchTrades(symbol string, since *JSONTime, params map[string]interface{}) ([]Trade, error)
-	// FetchOrder(id string, symbol *string, params map[string]interface{}) (Order, error)
+	FetchOrder(id string, symbol string, params map[string]interface{}) (*Order, error)
 	// FetchOrders(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Order, error)
-	// FetchOpenOrders(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Order, error)
+	FetchOpenOrders(symbol string, since int64, limit int64, params map[string]interface{}) ([]*Order, error)
 	// FetchClosedOrders(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Order, error)
 	// FetchMyTrades(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Trade, error)
 	FetchBalance(params map[string]interface{}) (*Account, error)
@@ -571,6 +577,7 @@ type ExchangeInterfaceInternal interface {
 	Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response []byte, err error)
 	Request(path string, api string, method string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (response []byte, err error)
 	Describe() []byte
+	ParseOrder(interface{}, interface{}) map[string]interface{}
 }
 
 // Exchange struct
@@ -839,13 +846,16 @@ func (self *Exchange) Fetch(url string, method string, headers map[string]interf
 	}
 	defer resp.Body.Close()
 	response, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
 
 	if self.Verbose {
 		log.Println("Response:", method, url, resp.StatusCode, resp.Header, string(response))
 	}
 
 	if resp.StatusCode != 200 {
-		err = errors.New("not 200")
+		err = fmt.Errorf("%s %s %d %s %s", method, url, resp.StatusCode, http.StatusText(resp.StatusCode), string(response))
 		return
 	}
 
@@ -1320,6 +1330,8 @@ func (self *Exchange) SafeInteger(d interface{}, key string, defaultVal int64) (
 		if val, ok := d[key]; ok {
 			if intVal, ok := val.(int64); ok {
 				return intVal
+			} else if val, ok := val.(float64); ok {
+				return int64(val)
 			}
 		}
 	}
@@ -1524,7 +1536,9 @@ func (self *Exchange) Member(o interface{}, idx interface{}) interface{} {
 	case reflect.Map:
 		return reflect.ValueOf(o).MapIndex(reflect.ValueOf(idx)).Interface()
 	case reflect.Struct:
-		return reflect.ValueOf(o).FieldByName(idx.(string)).Interface()
+		return reflect.ValueOf(o).FieldByName(self.Capitalize(idx.(string))).Interface()
+	case reflect.Ptr:
+		return reflect.Indirect(reflect.ValueOf(o)).FieldByName(self.Capitalize(idx.(string)))
 	}
 
 	return nil
@@ -1664,6 +1678,14 @@ func (self *Exchange) CancelOrder(id string, symbol string, params map[string]in
 	return nil, fmt.Errorf("%s CancelOrder not supported yet", self.Id)
 }
 
+func (self *Exchange) FetchOrder(id string, symbol string, params map[string]interface{}) (*Order, error) {
+	return nil, fmt.Errorf("%s FetchOrder not supported yet", self.Id)
+}
+
+func (self *Exchange) FetchOpenOrders(symbol string, since int64, limit int64, params map[string]interface{}) ([]*Order, error) {
+	return nil, fmt.Errorf("%s FetchOpenOrders not supported yet", self.Id)
+}
+
 func (self *Exchange) SetApiKey(s string) {
 	self.ApiKey = s
 }
@@ -1675,4 +1697,39 @@ func (self *Exchange) SetPassword(s string) {
 }
 func (self *Exchange) SetUid(s string) {
 	// TODO
+}
+
+func (self *Exchange) ParseOrders(orders interface{}, market interface{}, since int64, limit int64) []map[string]interface{} {
+	result := []map[string]interface{}{}
+	for _, order := range orders.([]interface{}) {
+		result = append(result, self.Child.ParseOrder(order, market))
+	}
+	return result
+}
+
+func (self *Exchange) ParseOrder(order interface{}, market interface{}) map[string]interface{} {
+	return order.(map[string]interface{})
+}
+
+func (self *Exchange) ToOrders(orders interface{}) (result []*Order, err error) {
+	for _, o := range orders.([]map[string]interface{}) {
+		order, err := (&Order{}).InitFromMap(o)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, order)
+	}
+	return
+}
+
+// first character only, rest characters unchanged
+func (self *Exchange) Capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	b := []byte(s)
+	if b[0] >= 'a' && b[0] <= 'z' {
+		b[0] -= 32
+	}
+	return string(b)
 }
