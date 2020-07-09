@@ -1339,11 +1339,22 @@ func (self *Exchange) SafeString(d interface{}, key string, DefaultValue interfa
 func (self *Exchange) SafeFloat(d interface{}, key string, DefaultValue float64) (result float64) {
 	if d, ok := d.(map[string]interface{}); ok {
 		if val, ok := d[key]; ok {
-			if strVal, ok := val.(string); ok {
-				fVal, err := strconv.ParseFloat(strVal, 64)
+			switch val.(type) {
+			case string:
+				fVal, err := strconv.ParseFloat(val.(string), 64)
 				if err == nil {
 					return fVal
 				}
+			case int:
+				return float64(val.(int))
+			case int64:
+				return float64(val.(int64))
+			case float32:
+				return float64(val.(float32))
+			case float64:
+				return val.(float64)
+			case nil:
+				return DefaultValue
 			}
 		}
 	}
@@ -1450,10 +1461,11 @@ func (self *Exchange) ParseBalance(balances map[string]interface{}) (pAccount *A
 	account.Total = make(map[string]float64)
 
 	for currency, balance := range self.Omit(balances, []string{"info", "free", "used", "total"}) {
-		if balance, ok := balance.(Balance); ok {
-			account.Free[currency] = balance.Free
-			account.Used[currency] = balance.Used
-			account.Total[currency] = balance.Total
+		if balance, ok := balance.(map[string]interface{}); ok {
+			log.Println(currency, balance)
+			account.Free[currency] = self.SafeFloat(balance, "free", 0)
+			account.Used[currency] = self.SafeFloat(balance, "used", 0)
+			account.Total[currency] = self.SafeFloat(balance, "total", 0)
 		}
 	}
 
@@ -1483,8 +1495,8 @@ func (self *Exchange) Account() map[string]interface{} {
 }
 
 func (self *Exchange) SafeCurrencyCode(x interface{}) string {
-	if _, ok := x.(string); ok {
-		return "BTC"
+	if v, ok := x.(string); ok {
+		return v
 	}
 	return ""
 }
