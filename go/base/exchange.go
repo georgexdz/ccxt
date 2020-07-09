@@ -535,7 +535,7 @@ type ExchangeInterface interface {
 	CreateOrder(symbol, otype, side string, amount float64, price float64, params map[string]interface{}) (*Order, error)
 	LimitBuy(symbol string, price, amount float64, params map[string]interface{}) (*Order, error)
 	LimitSell(symbol string, price, amount float64, params map[string]interface{}) (*Order, error)
-	// CancelOrder(id string, symbol *string, params map[string]interface{}) error
+	CancelOrder(id string, symbol string, params map[string]interface{}) (interface{}, error)
 
 	// Describe() []byte
 	//GetMarkets() map[string]*Market
@@ -1658,6 +1658,10 @@ func (self *Exchange) LimitBuy(symbol string, price, amount float64, params map[
 
 func (self *Exchange) LimitSell(symbol string, price, amount float64, params map[string]interface{}) (*Order, error) {
 	return self.Child.CreateOrder(symbol, "limit", "sell", amount, price, params)
+}
+
+func (self *Exchange) CancelOrder(id string, symbol string, params map[string]interface{}) (interface{}, error) {
+	return nil, fmt.Errorf("%s CancelOrder not supported yet", self.Id)
 }
 
 func (self *Exchange) SetApiKey(s string) {
