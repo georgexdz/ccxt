@@ -1,3 +1,4 @@
+
 package kucoin
 
 import (
@@ -6,13 +7,6 @@ import (
 	"io/ioutil"
 	"testing"
 )
-
-//func testFetchMarkets(ex *ccxt.Kucoin) {
-	//markets, err := ex.FetchMarkets(nil)
-	//if err == nil {
-		//fmt.Println(markets)
-	//}
-//}
 
 func get_test_config(ex *Kucoin) {
 	plan, err := ioutil.ReadFile("test_config.json")

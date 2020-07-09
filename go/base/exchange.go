@@ -481,7 +481,7 @@ type ExchangeInterface interface {
 	// FetchMyTrades(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Trade, error)
 	// FetchBalance(params map[string]interface{}) (Balances, error)
 	//FetchCurrencies() (map[string]*Currency, error)
-	FetchMarkets(params map[string]interface{}) ([]*Market, error)
+	FetchMarkets(params map[string]interface{}) (interface{}, error)
 
 	// CreateOrder(symbol, t, side string, amount float64, price *float64, params map[string]interface{}) (Order, error)
 	// CancelOrder(id string, symbol *string, params map[string]interface{}) error
@@ -540,9 +540,8 @@ type Exchange struct {
 func (self *Exchange) Init(config *ExchangeConfig) (err error) {
 	self.Child = self
 
-	proxy, err := url.Parse("http://127.0.0.1:10809")
 	tr := &http.Transport{
-		Proxy:           http.ProxyURL(proxy),
+		Proxy:           http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	self.Client = &http.Client{
@@ -557,7 +556,7 @@ func (self *Exchange) Describe() ([]byte) {
 	return nil
 }
 
-func (self *Exchange) FetchMarkets(params map[string]interface{}) ([]*Market, error) {
+func (self *Exchange) FetchMarkets(params map[string]interface{}) (interface{}, error) {
 	return nil, nil
 }
 
@@ -675,9 +674,22 @@ func (self *Exchange) SetMarkets(markets []*Market, currencies map[string]*Curre
 func (self *Exchange) LoadMarkets() (map[string]*Market, error) {
 	var currencies map[string]*Currency
 	if self.Markets == nil {
-		markets, err := self.Child.FetchMarkets(nil)
+		marketData, err := self.Child.FetchMarkets(nil)
 		if err != nil {
 			return nil, err
+		}
+
+		var markets []*Market
+		if marketSliceData, ok := marketData.([]interface{}); ok {
+			for _, oneMarket := range marketSliceData {
+				if oneMarketMap, ok := oneMarket.(map[string]interface{}); ok {
+					oneMarket := &Market{
+						Id: oneMarketMap["id"].(string),
+						Symbol: oneMarketMap["symbol"].(string),
+					}
+					markets = append(markets, oneMarket)
+				}
+			}
 		}
 		return self.Child.SetMarkets(markets, currencies)
 	}
@@ -836,7 +848,11 @@ func (self *Exchange) DefineRestApi() (err error) {
 }
 
 func (self *Exchange) ApiFuncDecode(function string) (path string, api string, method string, err error) {
-	return
+	// fmt.Println(self.ApiDecodeInfo)
+	if info, ok := self.ApiDecodeInfo[function]; ok {
+		return info.Path, info.Api, info.Method, nil
+	}
+	return "", "", "", errors.New("undefined function!")
 }
 
 func (self *Exchange) ApiFunc(function string, params interface{}, headers map[string]interface{}, body interface{}) (result map[string]interface{}, err error) {
@@ -1266,6 +1282,22 @@ func (self *Exchange) SafeInteger(d interface{}, key string, defaultVal int64) (
 	return defaultVal
 }
 
+func (self *Exchange) SafeString2(d interface{}, key1 string, key2 string, DefaultValue interface{}) (result string) {
+	if d, ok := d.(map[string]interface{}); ok {
+		if val, ok := d[key1]; ok {
+			if strVal, ok := val.(string); ok {
+		        return strVal
+		    }
+		}
+		if val, ok := d[key2]; ok {
+			if strVal, ok := val.(string); ok {
+		        return strVal
+		    }
+		}
+	}
+	return DefaultValue.(string)
+}
+
 func (self *Exchange) SafeString(d interface{}, key string, DefaultValue interface{}) (result string) {
 	if d, ok := d.(map[string]interface{}); ok {
 		if val, ok := d[key]; ok {
@@ -1424,8 +1456,8 @@ func (self *Exchange) Account() (map[string]interface{}) {
 }
 
 func (self *Exchange) SafeCurrencyCode(x interface{}) string {
-	if _, ok := x.(string); ok {
-		return "BTC"
+	if v, ok := x.(string); ok {
+		return v
 	}
 	return ""
 }
@@ -1448,7 +1480,11 @@ func (self *Exchange) Member (o interface{}, idx interface{}) interface{} {
     case reflect.Map:
         return reflect.ValueOf(o).MapIndex(reflect.ValueOf(idx)).Interface()
     case reflect.Struct:
-        return reflect.ValueOf(o).FieldByName(idx.(string)).Interface()
+    	field := strings.Title(idx.(string))
+        return reflect.ValueOf(o).FieldByName(field).Interface()
+	case reflect.Ptr:
+    	field := strings.Title(idx.(string))
+		return reflect.Indirect(reflect.ValueOf(o)).FieldByName(field)
     }
 
 	return nil
@@ -1565,5 +1601,25 @@ func (self* Exchange) AddTwoInterface (a interface{}, b interface{}) interface{}
 		return a.(float32) + b.(float32)
 	default:
 		 return nil
+	}
+}
+
+func (self *Exchange) Nonce() int64 {
+	return self.Milliseconds()
+}
+
+
+func (self *Exchange) ParseOrders(orders interface{}, market interface{}, since interface{}, limit interface{}) interface{} {
+	return orders
+}
+
+func (self *Exchange) PrecisionFromString(s string) int {
+	re := regexp.MustCompile(`0+$`)
+	s = re.ReplaceAllString(s, "")
+	sp := strings.Split(s, ".")
+	if len(sp) > 1 {
+		return len(sp[1])
+	} else {
+		return 0
 	}
 }

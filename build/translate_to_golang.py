@@ -54,7 +54,8 @@ EX_EXTRA_FUNC = {
 FUNC_LIST = [
     'sign', 'fetchOrderBook', 'fetchOpenOrders', 'cancelOrder',
     'createOrder', 'fetchOrder', 'parseOrder', 'fetchBalance',
-    'fetchOrdersByStatus', 'fetchOrdersByState', 'fetchMarkets'
+    'fetchOrdersByStatus', 'fetchOrdersByState', 'fetchMarkets',
+    'fetchCurrencies',
 ]
 JS_PATCH_FOR_GOLAGNG_TRANSLATE = {
     'kucoin': {
@@ -135,6 +136,7 @@ FUNC_ARG_MAP = {
     'parseOrder': 'order interface{}, market interface{}',
     'parseOrders': 'status string, symbol string, since int64, limit int64, params map[string]interface{}',
     'fetchMarkets': 'params map[string]interface{}',
+    'fetchCurrencies': 'params map[string]interface{}',
 }
 RETURN_MAP = {
     'createOrder': 'order map[string]interface{}, err error',
@@ -148,6 +150,7 @@ RETURN_MAP = {
     'sign': 'ret interface{}, err error',
     'parseOrder': 'result interface{}',
     'fetchMarkets': 'ret interface{}, err error',
+    'fetchCurrencies': 'ret interface{}, err error',
 }
 NIL_MAP = {
     'string': '""',
@@ -199,6 +202,9 @@ def MemberExpression(syntax, info={}):
         }
         default = f'{obj}[{method_name}]'
 
+        if syntax.property.type == 'Identifier' and syntax.property.name == 'push':
+            if 'arg_str' in info:
+                return f'{obj} = append({obj}, {info["arg_str"]})'
         if syntax.property.type == 'Identifier' and syntax.property.name == 'split':
             if 'arg_str' in info:
                 return f'strings.Split({obj}, {info["arg_str"]})'
