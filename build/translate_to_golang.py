@@ -1,10 +1,12 @@
 
 import os
 import sys
+import traceback
 import re
 import humps
 
 import esprima
+import json
 
 
 EX_NAME = 'Kucoin'
@@ -12,7 +14,11 @@ EX_NAME = 'Kucoin'
 
 def get_ex_list():
     return [
-        'kucoin'
+        'kucoin',
+        'huobipro',
+        'okex',
+        'bitmax',
+        'binance'
     ]
 
 
@@ -40,10 +46,81 @@ type {ex.capitalize()} struct {
     '''
 
 
-JS_FOLD = './js'
+JS_FOLD = 'js'
+
+EX_EXTRA_FUNC = {
+    'kucoin': ['fetchOrdersByStatus']
+}
+FUNC_LIST = [
+    'sign', 'fetchOrderBook', 'fetchOpenOrders', 'cancelOrder',
+    'createOrder', 'fetchOrder', 'parseOrder', 'fetchBalance',
+    'fetchOrdersByStatus', 'fetchOrdersByState', 'fetchMarkets',
+    'fetchCurrencies',
+]
+JS_PATCH_FOR_GOLAGNG_TRANSLATE = {
+    'kucoin': {
+        'sign': {
+            "let amount = this.safeFloat (order, 'size');": "amount = xdfsa",
+        }
+    }
+}
+
+def read_describe(str_code):
+    x = re.findall(r"super.describe \(\), ({.*?})\);", str_code, re.MULTILINE|re.DOTALL)[0]
+
+    xx = ''
+    for line in x.split('\n'):
+        if '// ' in line:
+            line = line[:line.find('//')]
+        if 'this.' in line:
+            continue
+        xx += line + '\n'
+
+    x = xx
+    x = re.sub(r': ([A-Z].+),', r': "\1",', x)
+    x = x.replace('undefined', 'None')
+    x = x.replace('true', 'True')
+    x = x.replace('false', 'False')
+    a = eval(x)
+    return a
+
+
+def format_js_code_for_espima_analysis(func, block):
+    block = block.replace('await ', '')
+    block = block.replace('async ', 'function ')
+    if 'function' not in block.split('\n')[0]:
+        block = 'function' + block
+    return block
+
+
+def format_describe_func(desc):
+    return f'''
+    func (self *{EX_NAME}) Describe() []byte {{
+	return []byte(`{json.dumps(desc, indent=4)}`)
+	}}
+	'''
+
+def read_func(str_code):
+    result = {}
+
+    for block in str_code.split('\n\n'):
+        for func in FUNC_LIST:
+            if f'{func} ' in block.split('\n')[0]:
+                result[func] = format_js_code_for_espima_analysis(func, block)
+                # print(format_js_code_for_espima_analysis(func, block))
+
+    return result
+
+
 def read_code_str(ex):
-    with open(os.path.join(JS_FOLD, '{ex}.js')) as f:
-        f.read
+    p = os.path.join('..', 'js', f'{ex}.js')
+    with open(p, encoding='UTF-8') as f:
+        str_code = f.read()
+
+    return {
+        'describe': read_describe(str_code),
+        'func': read_func(str_code),
+    }
 
 
 FUNC_ARG_MAP = {
@@ -52,21 +129,28 @@ FUNC_ARG_MAP = {
     'cancelOrder': 'id string, symbol string, params map[string]interface{}',
     'fetchOpenOrders': 'symbol string, since int64, limit int64, params map[string]interface{}',
     'fetchOrdersByStatus': 'status string, symbol string, since int64, limit int64, params map[string]interface{}',
+    'fetchOrdersByState': 'status string, symbol string, since int64, limit int64, params map[string]interface{}',
     'fetchOrderBook': 'symbol string, limit int64, params map[string]interface{}',
     'fetchOrder': 'id string, symbol string, params map[string]interface{}',
-    'sign': 'id string, symbol string, params map[string]interface{}',
-    'parseOrder': 'id string, symbol string, params map[string]interface{}',
+    'sign': 'path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}',
+    'parseOrder': 'order interface{}, market interface{}',
+    'parseOrders': 'status string, symbol string, since int64, limit int64, params map[string]interface{}',
+    'fetchMarkets': 'params map[string]interface{}',
+    'fetchCurrencies': 'params map[string]interface{}',
 }
 RETURN_MAP = {
     'createOrder': 'order map[string]interface{}, err error',
     'fetchBalance': 'balanceResult *Account, err error',
     'cancelOrder': 'response interface{}, err error',
-    'fetchOrdersByStatus': 'orders []*Order, err error',
-    'fetchOpenOrders': 'orders []*Order, err error',
-    'fetchOrderBook': 'orderBook *OrderBook, err error',
-    'fetchOrder': 'order *Order, err error',
-    'sign': 'order *Order, err error',
-    'parseOrder': 'order interface{}',
+    'fetchOrdersByStatus': 'orders interface{}, err error',
+    'fetchOrdersByState': 'orders interface{}, err error',
+    'fetchOpenOrders': 'orders interface{}, err error',
+    'fetchOrderBook': 'orderBook interface{}, err error',
+    'fetchOrder': 'order interface{}, err error',
+    'sign': 'ret interface{}, err error',
+    'parseOrder': 'result interface{}',
+    'fetchMarkets': 'ret interface{}, err error',
+    'fetchCurrencies': 'ret interface{}, err error',
 }
 NIL_MAP = {
     'string': '""',
@@ -118,6 +202,9 @@ def MemberExpression(syntax, info={}):
         }
         default = f'{obj}[{method_name}]'
 
+        if syntax.property.type == 'Identifier' and syntax.property.name == 'push':
+            if 'arg_str' in info:
+                return f'{obj} = append({obj}, {info["arg_str"]})'
         if syntax.property.type == 'Identifier' and syntax.property.name == 'split':
             if 'arg_str' in info:
                 return f'strings.Split({obj}, {info["arg_str"]})'
@@ -133,8 +220,9 @@ def MemberExpression(syntax, info={}):
 
 def CallExpression(syntax, info={}):
     arg_str = ','.join([call_func_by_syntax(arg, info) for arg in syntax.arguments])
+
     # default arg
-    if syntax.callee.property.name.lower() in DEFAULT_FUNC_ARGS:
+    if syntax.callee.property and syntax.callee.property.name.lower() in DEFAULT_FUNC_ARGS:
         arg_info = DEFAULT_FUNC_ARGS[syntax.callee.property.name.lower()]
         arg_str += f', {arg_info[1]}' * (arg_info[0] - len(syntax.arguments))
     info.update({'arg_str': arg_str})
@@ -249,7 +337,12 @@ def BinaryExpression(syntax, info={}):
 
 
 def call_func_by_syntax(syntax, info={}):
-    return globals()[syntax.type](syntax, info)
+    try:
+        return globals()[syntax.type](syntax, info)
+    except Exception as e:
+        print(traceback.format_exc())
+        print(syntax)
+        raise
 
 
 def AssignmentExpression(syntax, info={}):
@@ -371,482 +464,199 @@ def parse_by_syntax(str_code):
     return syntax_analysis(syntax.body)
 
 
-def test():
-    global FUNC_LINES
-    FUNC_LINES = 99
-    code = '''
-    async createOrder (symbol, type, side, amount, price = undefined, params = {}) {
-        await this.loadMarkets ();
-        const marketId = this.marketId (symbol);
-        // required param, cannot be used twice
-        const clientOid = this.uuid ();
-        const request = {
-            'clientOid': clientOid,
-            'side': side,
-            'symbol': marketId,
-            'type': type,
-        };
-        if (type !== 'market') {
-            request['price'] = this.priceToPrecision (symbol, price);
-            request['size'] = this.amountToPrecision (symbol, amount);
-        } else {
-            if (this.safeValue (params, 'quoteAmount')) {
-                // used to create market order by quote amount - https://github.com/ccxt/ccxt/issues/4876
-                request['funds'] = this.amountToPrecision (symbol, amount);
-            } else {
-                request['size'] = this.amountToPrecision (symbol, amount);
-            }
-        }
-        const response = await this.privatePostOrders (this.extend (request, params));
-        //
-        //     {
-        //         code: '200000',
-        //         data: {
-        //             "orderId": "5bd6e9286d99522a52e458de"
-        //         }
-        //    }
-        //
-        const data = this.safeValue (response, 'data', {});
-        const timestamp = this.milliseconds ();
-        const order = {
-            'id': this.safeString (data, 'orderId'),
-            'symbol': symbol,
-            'type': type,
-            'side': side,
-            'price': price,
-            'cost': undefined,
-            'filled': undefined,
-            'remaining': undefined,
-            'timestamp': timestamp,
-            'datetime': this.iso8601 (timestamp),
-            'fee': undefined,
-            'status': 'open',
-            'clientOrderId': clientOid,
-            'info': data,
-        };
-        if (!this.safeValue (params, 'quoteAmount')) {
-            order['amount'] = amount;
-        }
-        return order;
-    }
-    '''
-    print(parse_by_syntax(code))
+def format_header():
+    return f'''
+    package {EX_NAME.lower()}
 
-    FUNC_LINES = 8
-    code = '''
-    async fetchBalance (params = {}) {
-        await this.loadMarkets ();
-        let type = undefined;
-        const request = {};
-        if ('type' in params) {
-            type = params['type'];
-            if (type !== undefined) {
-                request['type'] = type;
-            }
-            params = this.omit (params, 'type');
-        } else {
-            const options = this.safeValue (this.options, 'fetchBalance', {});
-            type = this.safeString (options, 'type', 'trade');
-        }
-        const response = await this.privateGetAccounts (this.extend (request, params));
-        //
-        //     {
-        //         "code":"200000",
-        //         "data":[
-        //             {"balance":"0.00009788","available":"0.00009788","holds":"0","currency":"BTC","id":"5c6a4fd399a1d81c4f9cc4d0","type":"trade"},
-        //             {"balance":"3.41060034","available":"3.41060034","holds":"0","currency":"SOUL","id":"5c6a4d5d99a1d8182d37046d","type":"trade"},
-        //             {"balance":"0.01562641","available":"0.01562641","holds":"0","currency":"NEO","id":"5c6a4f1199a1d8165a99edb1","type":"trade"},
-        //         ]
-        //     }
-        //
-        const data = this.safeValue (response, 'data', []);
-        const result = { 'info': response };
-        for (let i = 0; i < data.length; i++) {
-            const balance = data[i];
-            const balanceType = this.safeString (balance, 'type');
-            if (balanceType === type) {
-                const currencyId = this.safeString (balance, 'currency');
-                const code = this.safeCurrencyCode (currencyId);
-                const account = this.account ();
-                account['total'] = this.safeFloat (balance, 'balance');
-                account['free'] = this.safeFloat (balance, 'available');
-                account['used'] = this.safeFloat (balance, 'holds');
-                result[code] = account;
-            }
-        }
-        return this.parseBalance (result);
-    }
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	. "github.com/georgexdz/ccxt/go/base"
+	"reflect"
+	"strings"
+)
+
+type {EX_NAME} struct {{
+	Exchange
+}}
+
+func New(config *ExchangeConfig) (ex *{EX_NAME}, err error) {{
+	ex = new({EX_NAME})
+	err = ex.Init(config)
+	ex.Child = ex
+
+	err = ex.InitDescribe()
+	if err != nil {{
+		return
+	}}
+
+	return
+}}
+
+func (self *{EX_NAME}) InitDescribe() (err error) {{
+	err = json.Unmarshal(self.Child.Describe(), &self.DescribeMap)
+	if err != nil {{
+		return
+	}}
+
+	err = self.DefineRestApi()
+	if err != nil {{
+		return
+	}}
+
+	publicUrl, err := NestedMapLookup(self.DescribeMap, "urls", "api", "public")
+	if err != nil {{
+		return
+	}}
+	privateUrl, err := NestedMapLookup(self.DescribeMap, "urls", "api", "private")
+	if err != nil {{
+		return
+	}}
+	self.ApiUrls = map[string]string{{
+		"private": privateUrl.(string),
+		"public":  publicUrl.(string),
+	}}
+
+	self.Options = self.DescribeMap["options"].(map[string]interface{{}})
+	self.Urls = self.DescribeMap["urls"].(map[string]interface{{}})
+	return
+}}
 '''
-    print(parse_by_syntax(code))
 
-    code = '''
-        async fetchOrder (id, symbol = undefined, params = {}) {
-        await this.loadMarkets ();
-        const request = {
-            'orderId': id,
-        };
-        let market = undefined;
-        if (symbol !== undefined) {
-            market = this.market (symbol);
-        }
-        const response = await this.privateGetOrdersOrderId (this.extend (request, params));
-        const responseData = response['data'];
-        return this.parseOrder (responseData, market);
-    }
-'''
-    FUNC_LINES = 99
-    print(parse_by_syntax(code))
-    code = '''
-        async cancelOrder (id, symbol = undefined, params = {}) {
-        const request = { 'orderId': id };
-        const response = await this.privateDeleteOrdersOrderId (this.extend (request, params));
-        return response;
-    }
-'''
-    FUNC_LINES = 99
-    print(parse_by_syntax(code))
 
-    code = '''
-        async fetchOrderBook (symbol, limit = undefined, params = {}) {
-        const level = this.safeInteger (params, 'level', 2);
-        let levelLimit = level.toString ();
-        if (levelLimit === '2') {
-            if (limit !== undefined) {
-                if ((limit !== 20) && (limit !== 100)) {
-                    throw new ExchangeError (this.id + ' fetchOrderBook limit argument must be undefined, 20 or 100');
-                }
-                levelLimit += '_' + limit.toString ();
-            }
-        }
-        await this.loadMarkets ();
-        const marketId = this.marketId (symbol);
-        const request = { 'symbol': marketId, 'level': levelLimit };
-        const response = await this.publicGetMarketOrderbookLevelLevel (this.extend (request, params));
-        //
-        // 'market/orderbook/level2'
-        // 'market/orderbook/level2_20'
-        // 'market/orderbook/level2_100'
-        //
-        //     {
-        //         "code":"200000",
-        //         "data":{
-        //             "sequence":"1583235112106",
-        //             "asks":[
-        //                 // ...
-        //                 ["0.023197","12.5067468"],
-        //                 ["0.023194","1.8"],
-        //                 ["0.023191","8.1069672"]
-        //             ],
-        //             "bids":[
-        //                 ["0.02319","1.6000002"],
-        //                 ["0.023189","2.2842325"],
-        //             ],
-        //             "time":1586584067274
-        //         }
-        //     }
-        //
-        // 'market/orderbook/level3'
-        //
-        //     {
-        //         "code":"200000",
-        //         "data":{
-        //             "sequence":"1583731857120",
-        //             "asks":[
-        //                 // id, price, size, timestamp in nanoseconds
-        //                 ["5e915f8acd26670009675300","6925.7","0.2","1586585482194286069"],
-        //                 ["5e915f8ace35a200090bba48","6925.7","0.001","1586585482229569826"],
-        //                 ["5e915f8a8857740009ca7d33","6926","0.00001819","1586585482149148621"],
-        //             ],
-        //             "bids":[
-        //                 ["5e915f8acca406000ac88194","6925.6","0.05","1586585482384384842"],
-        //                 ["5e915f93cd26670009676075","6925.6","0.08","1586585491334914600"],
-        //                 ["5e915f906aa6e200099b49f6","6925.4","0.2","1586585488941126340"],
-        //             ],
-        //             "time":1586585492487
-        //         }
-        //     }
-        //
-        const data = this.safeValue (response, 'data', {});
-        const timestamp = this.safeInteger (data, 'time');
-        const orderbook = this.parseOrderBook (data, timestamp, 'bids', 'asks', level - 2, level - 1);
-        orderbook['nonce'] = this.safeInteger (data, 'sequence');
-        return orderbook;
-    }'''
-    FUNC_LINES = 99
-    print(parse_by_syntax(code))
+def format_funcs(func_info_map):
+    ret = ''
 
-    code = '''
-        async fetchOrdersByStatus (status, symbol = undefined, since = undefined, limit = undefined, params = {}) {
-        await this.loadMarkets ();
-        const request = {
-            'status': status,
-        };
-        let market = undefined;
-        if (symbol !== undefined) {
-            market = this.market (symbol);
-            request['symbol'] = market['id'];
-        }
-        if (since !== undefined) {
-            request['startAt'] = since;
-        }
-        if (limit !== undefined) {
-            request['pageSize'] = limit;
-        }
-        const response = await this.privateGetOrders (this.extend (request, params));
-        //
-        //     {
-        //         code: '200000',
-        //         data: {
-        //             "currentPage": 1,
-        //             "pageSize": 1,
-        //             "totalNum": 153408,
-        //             "totalPage": 153408,
-        //             "items": [
-        //                 {
-        //                     "id": "5c35c02703aa673ceec2a168",   //orderid
-        //                     "symbol": "BTC-USDT",   //symbol
-        //                     "opType": "DEAL",      // operation type,deal is pending order,cancel is cancel order
-        //                     "type": "limit",       // order type,e.g. limit,markrt,stop_limit.
-        //                     "side": "buy",         // transaction direction,include buy and sell
-        //                     "price": "10",         // order price
-        //                     "size": "2",           // order quantity
-        //                     "funds": "0",          // order funds
-        //                     "dealFunds": "0.166",  // deal funds
-        //                     "dealSize": "2",       // deal quantity
-        //                     "fee": "0",            // fee
-        //                     "feeCurrency": "USDT", // charge fee currency
-        //                     "stp": "",             // self trade prevention,include CN,CO,DC,CB
-        //                     "stop": "",            // stop type
-        //                     "stopTriggered": false,  // stop order is triggered
-        //                     "stopPrice": "0",      // stop price
-        //                     "timeInForce": "GTC",  // time InForce,include GTC,GTT,IOC,FOK
-        //                     "postOnly": false,     // postOnly
-        //                     "hidden": false,       // hidden order
-        //                     "iceberg": false,      // iceberg order
-        //                     "visibleSize": "0",    // display quantity for iceberg order
-        //                     "cancelAfter": 0,      // cancel orders time，requires timeInForce to be GTT
-        //                     "channel": "IOS",      // order source
-        //                     "clientOid": "",       // user-entered order unique mark
-        //                     "remark": "",          // remark
-        //                     "tags": "",            // tag order source
-        //                     "isActive": false,     // status before unfilled or uncancelled
-        //                     "cancelExist": false,   // order cancellation transaction record
-        //                     "createdAt": 1547026471000  // time
-        //                 },
-        //             ]
-        //         }
-        //    }
-        const responseData = this.safeValue (response, 'data', {});
-        const orders = this.safeValue (responseData, 'items', []);
-        return this.parseOrders (orders, market, since, limit);
-    }
+    for func, code in func_info_map.items():
+        try:
+            ret += parse_by_syntax(code) + '\n'
+            # print(format_describe_func(info['describe']))
+        except Exception as e:
+            print(ex)
+            print(code)
+            print(traceback.format_exc())
+
+    return ret
+
+
+def format_ex_code(ex):
+    info = read_code_str(ex)
+
+    return f'''
+    {format_header()}
+    {format_describe_func(info['describe'])}
+    {format_funcs(info['func'])}
     '''
-    print(parse_by_syntax(code))
 
-    code = '''
-        async fetchOpenOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
-        return await this.fetchOrdersByStatus ('active', symbol, since, limit, params);
-    }
-    '''
-    print(parse_by_syntax(code))
 
-    code = '''
-    function parseOrder (order, market = undefined) {
-        //
-        // fetchOpenOrders, fetchClosedOrders
-        //
-        //     {
-        //         "id": "5c35c02703aa673ceec2a168",   //orderid
-        //         "symbol": "BTC-USDT",   //symbol
-        //         "opType": "DEAL",      // operation type,deal is pending order,cancel is cancel order
-        //         "type": "limit",       // order type,e.g. limit,markrt,stop_limit.
-        //         "side": "buy",         // transaction direction,include buy and sell
-        //         "price": "10",         // order price
-        //         "size": "2",           // order quantity
-        //         "funds": "0",          // order funds
-        //         "dealFunds": "0.166",  // deal funds
-        //         "dealSize": "2",       // deal quantity
-        //         "fee": "0",            // fee
-        //         "feeCurrency": "USDT", // charge fee currency
-        //         "stp": "",             // self trade prevention,include CN,CO,DC,CB
-        //         "stop": "",            // stop type
-        //         "stopTriggered": false,  // stop order is triggered
-        //         "stopPrice": "0",      // stop price
-        //         "timeInForce": "GTC",  // time InForce,include GTC,GTT,IOC,FOK
-        //         "postOnly": false,     // postOnly
-        //         "hidden": false,       // hidden order
-        //         "iceberg": false,      // iceberg order
-        //         "visibleSize": "0",    // display quantity for iceberg order
-        //         "cancelAfter": 0,      // cancel orders time，requires timeInForce to be GTT
-        //         "channel": "IOS",      // order source
-        //         "clientOid": "",       // user-entered order unique mark
-        //         "remark": "",          // remark
-        //         "tags": "",            // tag order source
-        //         "isActive": false,     // status before unfilled or uncancelled
-        //         "cancelExist": false,   // order cancellation transaction record
-        //         "createdAt": 1547026471000  // time
-        //     }
-        //
-        let symbol = undefined;
-        const marketId = this.safeString (order, 'symbol');
-        if (marketId !== undefined) {
-            if (marketId in this.markets_by_id) {
-                market = this.markets_by_id[marketId];
-                symbol = market['symbol'];
-            } else {
-                const [ baseId, quoteId ] = marketId.split ('-');
-                const base = this.safeCurrencyCode (baseId);
-                const quote = this.safeCurrencyCode (quoteId);
-                symbol = base + '/' + quote;
-            }
-            market = this.safeValue (this.markets_by_id, marketId);
-        }
-        if (symbol === undefined) {
-            if (market !== undefined) {
-                symbol = market['symbol'];
-            }
-        }
-        const orderId = this.safeString (order, 'id');
-        const type = this.safeString (order, 'type');
-        const timestamp = this.safeInteger (order, 'createdAt');
-        const datetime = this.iso8601 (timestamp);
-        let price = this.safeFloat (order, 'price');
-        const side = this.safeString (order, 'side');
-        const feeCurrencyId = this.safeString (order, 'feeCurrency');
-        const feeCurrency = this.safeCurrencyCode (feeCurrencyId);
-        const feeCost = this.safeFloat (order, 'fee');
-        const amount = this.safeFloat (order, 'size');
-        const filled = this.safeFloat (order, 'dealSize');
-        const cost = this.safeFloat (order, 'dealFunds');
-        const remaining = amount - filled;
-        // bool
-        let status = order['isActive'] ? 'open' : 'closed';
-        status = order['cancelExist'] ? 'canceled' : status;
-        const fee = {
-            'currency': feeCurrency,
-            'cost': feeCost,
-        };
-        if (type === 'market') {
-            if (price === 0.0) {
-                if ((cost !== undefined) && (filled !== undefined)) {
-                    if ((cost > 0) && (filled > 0)) {
-                        price = cost / filled;
-                    }
-                }
-            }
-        }
-        const clientOrderId = this.safeString (order, 'clientOid');
-        return {
-            'id': orderId,
-            'clientOrderId': clientOrderId,
-            'symbol': symbol,
-            'type': type,
-            'side': side,
-            'amount': amount,
-            'price': price,
-            'cost': cost,
-            'filled': filled,
-            'remaining': remaining,
-            'timestamp': timestamp,
-            'datetime': datetime,
-            'fee': fee,
-            'status': status,
-            'info': order,
-            'lastTradeTimestamp': undefined,
-            'average': undefined,
-            'trades': undefined,
-        };
-    }'''
-    print(parse_by_syntax(code))
+def format_test_file(ex):
+    return f'''
+package {EX_NAME.lower()}
 
-    code = '''
-    function     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-        //
-        // the v2 URL is https://openapi-v2.kucoin.com/api/v1/endpoint
-        //                                †                 ↑
-        //
-        const versions = this.safeValue (this.options, 'versions', {});
-        const apiVersions = this.safeValue (versions, api);
-        const methodVersions = this.safeValue (apiVersions, method, {});
-        const defaultVersion = this.safeString (methodVersions, path, this.options['version']);
-        const version = this.safeString (params, 'version', defaultVersion);
-        params = this.omit (params, 'version');
-        let endpoint = '/api/' + version + '/' + this.implodeParams (path, params);
-        const query = this.omit (params, this.extractParams (path));
-        let endpart = '';
-        headers = (headers !== undefined) ? headers : {};
-        if (Object.keys (query).length) {
-            if (method !== 'GET') {
-                endpart = this.json (query);
-                headers['Content-Type'] = 'application/json';
-            } else {
-                endpoint += '?' + this.urlencode (query);
-            }
-        }
-        const url = this.urls['api'][api].toString() + endpoint;
-        if (api === 'private') {
-            this.checkRequiredCredentials ();
-            const timestamp = this.nonce ().toString ();
-            headers = this.extend ({
-                'KC-API-KEY': this.apiKey,
-                'KC-API-TIMESTAMP': timestamp,
-                'KC-API-PASSPHRASE': this.password,
-            }, headers);
-            const payload = timestamp + method + endpoint + endpart;
-            const signature = this.hmac (this.encode (payload), this.encode (this.secret), 'sha256', 'base64');
-            headers['KC-API-SIGN'] = this.decode (signature);
-        }
-        return { 'url': url, 'method': method, 'body': endpart, 'headers': headers };
-    } 
-    '''
-    FUNC_LINES= 16
-    print(parse_by_syntax(code))
+import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"testing"
+)
 
-    code = '''
-    function  sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-        //
-        // the v2 URL is https://openapi-v2.kucoin.com/api/v1/endpoint
-        //                                †                 ↑
-        //
-        const versions = this.safeValue (this.options, 'versions', {});
-        const apiVersions = this.safeValue (versions, api);
-        const methodVersions = this.safeValue (apiVersions, method, {});
-        const defaultVersion = this.safeString (methodVersions, path, this.options['version']);
-        const version = this.safeString (params, 'version', defaultVersion);
-        params = this.omit (params, 'version');
-        let endpoint = '/api/' + version + '/' + this.implodeParams (path, params);
-        const query = this.omit (params, this.extractParams (path));
-        let endpart = '';
-        headers = (headers !== undefined) ? headers : {};
-        if (Object.keys (query).length) {
-            if (method !== 'GET') {
-                endpart = this.json (query);
-                headers['Content-Type'] = 'application/json';
-            } else {
-                endpoint += '?' + this.urlencode (query);
-            }
-        }
-        const url = this.urls['api'][api].toString() + endpoint;
-        if (api === 'private') {
-            this.checkRequiredCredentials ();
-            const timestamp = this.nonce ().toString ();
-            headers = this.extend ({
-                'KC-API-KEY': this.apiKey,
-                'KC-API-TIMESTAMP': timestamp,
-                'KC-API-PASSPHRASE': this.password,
-            }, headers);
-            const payload = timestamp + method + endpoint + endpart;
-            const signature = this.hmac (this.encode (payload), this.encode (this.secret), 'sha256', 'base64');
-            headers['KC-API-SIGN'] = this.decode (signature);
-        }
-        return { 'url': url, 'method': method, 'body': endpart, 'headers': headers };
-    }'''
-    print(parse_by_syntax(code))
+func get_test_config(ex *{EX_NAME.capitalize()}) {{
+	plan, err := ioutil.ReadFile("test_config.json")
+	if err != nil {{
+		return
+	}}
+
+	var data interface{{}}
+	err = json.Unmarshal(plan, &data)
+	if err != nil {{
+		return
+	}}
+	
+	fmt.Println(data)
+
+	if json_config, ok := data.(map[string]interface{{}}); ok {{
+        ex.Urls = map[string]interface{{}}{{
+        	"api": map[string]interface{{}}{{
+        		"public": json_config["url"],
+        		"private": json_config["url"],
+			}},
+        }}
+		ex.ApiUrls["private"] = json_config["url"].(string)
+		ex.ApiUrls["public"] = json_config["url"].(string)
+		ex.ApiKey = json_config["key"].(string)
+		ex.Secret = json_config["secret"].(string)
+		ex.Password = json_config["password"].(string)
+	}}
+}}
+
+func TestFetchOrderBook(t *testing.T) {{
+	ex, _ := New(nil)
+	fmt.Println(ex.ApiDecodeInfo)
+	ex.Verbose = true
+
+	get_test_config(ex)
+
+	markets, err := ex.LoadMarkets()
+	if err != nil {{
+		t.Fatal(err)
+		return
+	}}
+	fmt.Println("markets:", markets)
+
+	orderbook, err := ex.FetchOrderBook("BTC/USDT", 20, nil)
+	if err != nil {{
+		fmt.Println(err.Error())
+		return
+	}}
+	fmt.Println("orderbook:", orderbook)
+
+	ex.FetchBalance(nil)
+
+	order, err := ex.CreateOrder("ETH/BTC", "limit", "buy", 0.0001, 0.024, nil)
+	if err != nil {{
+		return
+	}}
+
+	fmt.Println(ex.FetchOrder(order["id"].(string), "ETH/BTC", nil))
+
+	openOrders, err := ex.FetchOpenOrders("ETH/BTC", 0, 20, nil)
+	if err == nil {{
+		fmt.Println("openorders", openOrders)
+	}}
+
+	if err == nil {{
+		res, err := ex.CancelOrder(order["id"].(string), "ETH/BTC", nil)
+		fmt.Println(res, err)
+	}}
+}}
+
+//func main() {{
+	//ex := &ccxt.Kucoin{{}}
+	//ex.Init()
+	//// testFetchMarkets(ex)
+	//fmt.Println("enter")
+	//testFetchOrderBook(ex)
+//}}'''
+
+def write_ex_file(ex, code):
+    des_dir = os.path.join('..', 'go', f'{ex.lower()}')
+    if not os.path.exists(des_dir):
+        os.makedirs(des_dir)
+    with open(os.path.join(des_dir, f'{ex.lower()}.go'), 'w') as f:
+        f.write(code)
+    with open(os.path.join(des_dir, f'{ex.lower()}_test.go'), 'w') as f:
+        f.write(format_test_file(ex))
+
 
 def translate():
+    global EX_NAME
     for ex in get_ex_list():
-        str_code = read_code_str(ex)
+        EX_NAME = ex.capitalize()
+        code = format_ex_code(ex)
+        write_ex_file(ex, code)
 
 
 if __name__ == '__main__':
-    test()
+    # test()
+    translate()

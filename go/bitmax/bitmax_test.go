@@ -1,5 +1,5 @@
 
-package kucoin
+package bitmax
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func get_test_config(ex *Kucoin) {
+func get_test_config(ex *Bitmax) {
 	plan, err := ioutil.ReadFile("test_config.json")
 	if err != nil {
 		return

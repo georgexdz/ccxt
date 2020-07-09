@@ -1,5 +1,5 @@
 
-package kucoin
+package okex
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func get_test_config(ex *Kucoin) {
+func get_test_config(ex *Okex) {
 	plan, err := ioutil.ReadFile("test_config.json")
 	if err != nil {
 		return

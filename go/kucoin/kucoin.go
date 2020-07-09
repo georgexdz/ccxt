@@ -4,10 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	. "github.com/georgexdz/ccxt/go/base"
 	"reflect"
 	"strings"
-
-	. "github.com/georgexdz/ccxt/go/base"
 )
 
 type Kucoin struct {
@@ -58,7 +57,43 @@ func (self *Kucoin) InitDescribe() (err error) {
 
 func (self *Kucoin) Describe() []byte {
 	return []byte(`{
-	"version": "v2",
+    "id": "kucoin",
+    "name": "KuCoin",
+    "countries": [
+        "SC"
+    ],
+    "rateLimit": 334,
+    "version": "v2",
+    "certified": false,
+    "pro": true,
+    "comment": "Platform 2.0",
+    "has": {
+        "CORS": false,
+        "fetchStatus": true,
+        "fetchTime": true,
+        "fetchMarkets": true,
+        "fetchCurrencies": true,
+        "fetchTicker": true,
+        "fetchTickers": true,
+        "fetchOrderBook": true,
+        "fetchOrder": true,
+        "fetchClosedOrders": true,
+        "fetchOpenOrders": true,
+        "fetchDepositAddress": true,
+        "createDepositAddress": true,
+        "withdraw": true,
+        "fetchDeposits": true,
+        "fetchWithdrawals": true,
+        "fetchBalance": true,
+        "fetchTrades": true,
+        "fetchMyTrades": true,
+        "createOrder": true,
+        "cancelOrder": true,
+        "fetchAccounts": true,
+        "fetchFundingFee": true,
+        "fetchOHLCV": true,
+        "fetchLedger": true
+    },
     "urls": {
         "logo": "https://user-images.githubusercontent.com/1294454/57369448-3cc3aa80-7196-11e9-883e-5ebeb35e4f57.jpg",
         "referral": "https://www.kucoin.com/?rcode=E5wkqe",
@@ -74,6 +109,11 @@ func (self *Kucoin) Describe() []byte {
         "doc": [
             "https://docs.kucoin.com"
         ]
+    },
+    "requiredCredentials": {
+        "apiKey": true,
+        "secret": true,
+        "password": true
     },
     "api": {
         "public": {
@@ -158,124 +198,212 @@ func (self *Kucoin) Describe() []byte {
             ]
         }
     },
-	"options": {
-		"version": "v1",
-		"fetchBalance": {
-			"type": "trade"
-		}
-	}
+    "timeframes": {
+        "1m": "1min",
+        "3m": "3min",
+        "5m": "5min",
+        "15m": "15min",
+        "30m": "30min",
+        "1h": "1hour",
+        "2h": "2hour",
+        "4h": "4hour",
+        "6h": "6hour",
+        "8h": "8hour",
+        "12h": "12hour",
+        "1d": "1day",
+        "1w": "1week"
+    },
+    "exceptions": {
+        "exact": {
+            "order not exist": "OrderNotFound",
+            "order not exist.": "OrderNotFound",
+            "order_not_exist": "OrderNotFound",
+            "order_not_exist_or_not_allow_to_cancel": "InvalidOrder",
+            "Order size below the minimum requirement.": "InvalidOrder",
+            "The withdrawal amount is below the minimum requirement.": "ExchangeError",
+            "400": "BadRequest",
+            "401": "AuthenticationError",
+            "403": "NotSupported",
+            "404": "NotSupported",
+            "405": "NotSupported",
+            "429": "RateLimitExceeded",
+            "500": "ExchangeError",
+            "503": "ExchangeNotAvailable",
+            "200004": "InsufficientFunds",
+            "230003": "InsufficientFunds",
+            "260100": "InsufficientFunds",
+            "300000": "InvalidOrder",
+            "400000": "BadSymbol",
+            "400001": "AuthenticationError",
+            "400002": "InvalidNonce",
+            "400003": "AuthenticationError",
+            "400004": "AuthenticationError",
+            "400005": "AuthenticationError",
+            "400006": "AuthenticationError",
+            "400007": "AuthenticationError",
+            "400008": "NotSupported",
+            "400100": "BadRequest",
+            "411100": "AccountSuspended",
+            "415000": "BadRequest",
+            "500000": "ExchangeError"
+        },
+        "broad": {
+            "Exceeded the access frequency": "RateLimitExceeded"
+        }
+    },
+    "fees": {
+        "trading": {
+            "tierBased": false,
+            "percentage": true,
+            "taker": 0.001,
+            "maker": 0.001
+        },
+        "funding": {
+            "tierBased": false,
+            "percentage": false,
+            "withdraw": {},
+            "deposit": {}
+        }
+    },
+    "commonCurrencies": {
+        "HOT": "HOTNOW",
+        "EDGE": "DADI",
+        "WAX": "WAXP",
+        "TRY": "Trias"
+    },
+    "options": {
+        "version": "v1",
+        "symbolSeparator": "-",
+        "fetchMyTradesMethod": "private_get_fills",
+        "fetchBalance": {
+            "type": "trade"
+        },
+        "versions": {
+            "public": {
+                "GET": {
+                    "status": "v1",
+                    "market/orderbook/level{level}": "v1",
+                    "market/orderbook/level2": "v2",
+                    "market/orderbook/level2_20": "v1",
+                    "market/orderbook/level2_100": "v1"
+                }
+            },
+            "private": {
+                "POST": {
+                    "accounts/inner-transfer": "v2",
+                    "accounts/sub-transfer": "v2"
+                }
+            }
+        }
+    }
+}`)
 }
-	`)
-}
 
-func (self *Kucoin) ApiFuncDecode(function string) (path string, api string, method string, err error) {
-	// fmt.Println(self.ApiDecodeInfo)
-	if info, ok := self.ApiDecodeInfo[function]; ok {
-		return info.Path, info.Api, info.Method, nil
-	}
-	return "", "", "", errors.New("undefined function!")
-}
+func (self *Kucoin) FetchMarkets(params map[string]interface{}) (ret interface{}, err error) {
 
-func (self *Kucoin) Nonce() int64 {
-	return self.Milliseconds()
-}
-
-func (self *Kucoin) Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (ret interface{}, err error) {
-
-	versions := self.SafeValue(self.Options, "versions", map[string]interface{}{})
-
-	apiVersions := self.SafeValue(versions, api, nil)
-
-	methodVersions := self.SafeValue(apiVersions, method, map[string]interface{}{})
-
-	defaultVersion := self.SafeString(methodVersions, path, self.Member(self.Options, "version"))
-
-	version := self.SafeString(params, "version", defaultVersion)
-
-	params = self.Omit(params, "version")
-
-	endpoint := "/api/" + version + "/" + self.ImplodeParams(path, params)
-
-	query := self.Omit(params, self.ExtractParams(path))
-
-	endpart := ""
-
-	headers = self.IfThenElse(self.ToBool(!self.TestNil(headers)), headers, map[string]interface{}{})
-
-	if self.ToBool(self.Length(reflect.ValueOf(query).MapKeys())) {
-		if self.ToBool(method != "GET") {
-			endpart = self.Json(query)
-			self.SetValue(headers, "Content-Type", "application/json")
-		} else {
-			endpoint += "?" + self.Urlencode(query)
-		}
-	}
-
-	url := fmt.Sprintf("%v", self.Member(self.Member(self.Urls, "api"), api)) + endpoint
-
-	if self.ToBool(api == "private") {
-		self.CheckRequiredCredentials()
-		timestamp := fmt.Sprintf("%v", self.Nonce())
-		headers = self.Extend(map[string]interface{}{
-			"KC-API-KEY":        self.ApiKey,
-			"KC-API-TIMESTAMP":  timestamp,
-			"KC-API-PASSPHRASE": self.Password,
-		}, headers)
-		payload := timestamp + method + endpoint + endpart
-		signature, err := self.Hmac(self.Encode(payload), self.Encode(self.Secret), "sha256", "base64")
-		if err != nil {
-			return nil, err
-		}
-		self.SetValue(headers, "KC-API-SIGN", self.Decode(signature))
-	}
-
-	return map[string]interface{}{
-		"url":     url,
-		"method":  method,
-		"body":    endpart,
-		"headers": headers,
-	}, nil
-
-}
-
-func (self *Kucoin) FetchMarkets(params map[string]interface{}) ([]*Market, error) {
-	respJson, err := self.ApiFunc("publicGetSymbols", params, nil, nil)
+	response, err := self.ApiFunc("publicGetSymbols", params, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	var result []*Market
+	data := self.Member(response, "data")
 
-	if respJson["code"] == "200000" {
-		if symbolList, ok := respJson["data"].([]interface{}); ok {
-			for _, oneSymbol := range symbolList {
-				if oneSymbolInfo, ok := oneSymbol.(map[string]interface{}); ok {
-					li := strings.Split(oneSymbolInfo["symbol"].(string), "-")
-					oneMarket := &Market{
-						Id:     oneSymbolInfo["symbol"].(string),
-						Symbol: li[0] + "/" + li[1],
-					}
-					result = append(result, oneMarket)
-				}
-			}
+	result := []interface{}{}
+
+	for i := 0; i < self.Length(data); i++ {
+		market := self.Member(data, i)
+		id := self.SafeString(market, "symbol", "")
+		baseId, quoteId := self.Unpack2(strings.Split(id, "-"))
+		base := self.SafeCurrencyCode(baseId)
+		quote := self.SafeCurrencyCode(quoteId)
+		symbol := base + "/" + quote
+		active := self.SafeValue(market, "enableTrading", nil)
+		baseMaxSize := self.SafeFloat(market, "baseMaxSize", 0)
+		baseMinSize := self.SafeFloat(market, "baseMinSize", 0)
+		quoteMaxSize := self.SafeFloat(market, "quoteMaxSize", 0)
+		quoteMinSize := self.SafeFloat(market, "quoteMinSize", 0)
+		precision := map[string]interface{}{
+			"amount": self.PrecisionFromString(self.SafeString(market, "baseIncrement", "")),
+			"price":  self.PrecisionFromString(self.SafeString(market, "priceIncrement", "")),
 		}
+		limits := map[string]interface{}{
+			"amount": map[string]interface{}{
+				"min": baseMinSize,
+				"max": baseMaxSize,
+			},
+			"price": map[string]interface{}{
+				"min": self.SafeFloat(market, "priceIncrement", 0),
+				"max": quoteMaxSize / baseMinSize,
+			},
+			"cost": map[string]interface{}{
+				"min": quoteMinSize,
+				"max": quoteMaxSize,
+			},
+		}
+		result = append(result, map[string]interface{}{
+			"id":        id,
+			"symbol":    symbol,
+			"baseId":    baseId,
+			"quoteId":   quoteId,
+			"base":      base,
+			"quote":     quote,
+			"active":    active,
+			"precision": precision,
+			"limits":    limits,
+			"info":      market,
+		})
 	}
 
 	return result, nil
+
 }
 
-func (self *Kucoin) FetchOrderBook(symbol string, limit int, params map[string]interface{}) (orderBook *OrderBook, err error) {
+func (self *Kucoin) FetchCurrencies(params map[string]interface{}) (ret interface{}, err error) {
+
+	response, err := self.ApiFunc("publicGetCurrencies", params, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	responseData := self.Member(response, "data")
+
+	result := map[string]interface{}{}
+
+	for i := 0; i < self.Length(responseData); i++ {
+		entry := self.Member(responseData, i)
+		id := self.SafeString(entry, "currency", "")
+		name := self.SafeString(entry, "fullName", "")
+		code := self.SafeCurrencyCode(id)
+		precision := self.SafeInteger(entry, "precision", 0)
+		self.SetValue(result, code, map[string]interface{}{
+			"id":        id,
+			"name":      name,
+			"code":      code,
+			"precision": precision,
+			"info":      entry,
+			"active":    nil,
+			"fee":       nil,
+			"limits":    self.Limits,
+		})
+	}
+
+	return result, nil
+
+}
+
+func (self *Kucoin) FetchOrderBook(symbol string, limit int64, params map[string]interface{}) (orderBook interface{}, err error) {
+
 	level := self.SafeInteger(params, "level", 2)
 
 	levelLimit := fmt.Sprintf("%v", level)
 
-	if self.ToBool(self.TestNil(levelLimit)) {
-		if self.ToBool(self.TestNil(limit)) {
-			if limit <= 20 {
-				levelLimit += "_" + fmt.Sprintf("%v", 20)
-			} else if limit <= 100 {
-				levelLimit += "_" + fmt.Sprintf("%v", 100)
+	if self.ToBool(levelLimit == "2") {
+		if self.ToBool(!self.TestNil(limit)) {
+			if self.ToBool(limit != 20 && limit != 100) {
+				err = errors.New(self.Id + " fetchOrderBook limit argument must be undefined, 20 or 100")
+				return
 			}
+			levelLimit += "_" + fmt.Sprintf("%v", limit)
 		}
 	}
 
@@ -286,7 +414,7 @@ func (self *Kucoin) FetchOrderBook(symbol string, limit int, params map[string]i
 
 	marketId, err := self.MarketId(symbol)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	request := map[string]interface{}{
@@ -296,7 +424,7 @@ func (self *Kucoin) FetchOrderBook(symbol string, limit int, params map[string]i
 
 	response, err := self.ApiFunc("publicGetMarketOrderbookLevelLevel", self.Extend(request, params), nil, nil)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	data := self.SafeValue(response, "data", map[string]interface{}{})
@@ -305,7 +433,7 @@ func (self *Kucoin) FetchOrderBook(symbol string, limit int, params map[string]i
 
 	orderbook, err := self.ParseOrderBook(data, timestamp, "bids", "asks", level-2, level-1)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	self.SetValue(orderbook, "nonce", self.SafeInteger(data, "sequence", 0))
@@ -314,57 +442,8 @@ func (self *Kucoin) FetchOrderBook(symbol string, limit int, params map[string]i
 
 }
 
-func (self *Kucoin) FetchBalance(params map[string]interface{}) (balanceResult *Account, err error) {
-	_, err = self.LoadMarkets()
-	if err != nil {
-		return
-	}
+func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount float64, price float64, params map[string]interface{}) (order map[string]interface{}, err error) {
 
-	var typ interface{}
-
-	request := map[string]interface{}{}
-
-	if self.ToBool(self.InMap("type", params)) {
-		typ = self.Member(params, "type")
-		if self.ToBool(self.TestNil(typ)) {
-			self.SetValue(request, "type", typ)
-		}
-		params = self.Omit(params, "type")
-	} else {
-		options := self.SafeValue(self.Options, "fetchBalance", map[string]interface{}{})
-		typ = self.SafeString(options, "type", "trade")
-	}
-
-	response, err := self.ApiFunc("privateGetAccounts", self.Extend(request, params), nil, nil)
-	if err != nil {
-		return
-	}
-
-	data := self.SafeValue(response, "data", []interface{}{})
-
-	result := map[string]interface{}{
-		"info": response,
-	}
-
-	for i := 0; i < self.Length(data); i++ {
-		balance := self.Member(data, i)
-		balanceType := self.SafeString(balance, "type", "")
-		if self.ToBool(self.TestNil(balanceType)) {
-			currencyId := self.SafeString(balance, "currency", "")
-			code := self.SafeCurrencyCode(currencyId)
-			account := self.Account()
-			self.SetValue(account, "total", self.SafeFloat(balance, "balance", 0))
-			self.SetValue(account, "free", self.SafeFloat(balance, "available", 0))
-			self.SetValue(account, "used", self.SafeFloat(balance, "holds", 0))
-			self.SetValue(result, code, account)
-		}
-	}
-
-	return self.ParseBalance(result), nil
-
-}
-
-func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount float64, price float64, params map[string]interface{}) (result *Order, err error) {
 	_, err = self.LoadMarkets()
 	if err != nil {
 		return
@@ -372,13 +451,15 @@ func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount f
 
 	marketId, err := self.MarketId(symbol)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	clientOid := self.Uuid()
+	clientOrderId := self.SafeString2(params, "clientOid", "clientOrderId", self.Uuid())
+
+	params = self.Omit(params, []interface{}{"clientOid", "clientOrderId"})
 
 	request := map[string]interface{}{
-		"clientOid": clientOid,
+		"clientOid": clientOrderId,
 		"side":      side,
 		"symbol":    marketId,
 		"type":      typ,
@@ -397,14 +478,14 @@ func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount f
 
 	response, err := self.ApiFunc("privatePostOrders", self.Extend(request, params), nil, nil)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	data := self.SafeValue(response, "data", map[string]interface{}{})
 
 	timestamp := self.Milliseconds()
 
-	order := map[string]interface{}{
+	order = map[string]interface{}{
 		"id":            self.SafeString(data, "orderId", ""),
 		"symbol":        symbol,
 		"type":          typ,
@@ -417,7 +498,7 @@ func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount f
 		"datetime":      self.Iso8601(timestamp),
 		"fee":           nil,
 		"status":        "open",
-		"clientOrderId": clientOid,
+		"clientOrderId": clientOrderId,
 		"info":          data,
 	}
 
@@ -425,10 +506,72 @@ func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount f
 		self.SetValue(order, "amount", amount)
 	}
 
-	return (&Order{}).InitFromMap(order)
+	return order, nil
+
 }
 
-func (self *Kucoin) FetchOrder(id string, symbol string, params map[string]interface{}) (order *Order, err error) {
+func (self *Kucoin) CancelOrder(id string, symbol string, params map[string]interface{}) (response interface{}, err error) {
+
+	request := map[string]interface{}{
+		"orderId": id,
+	}
+
+	response, err = self.ApiFunc("privateDeleteOrdersOrderId", self.Extend(request, params), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return response, nil
+
+}
+
+func (self *Kucoin) FetchOrdersByStatus(status string, symbol string, since int64, limit int64, params map[string]interface{}) (orders interface{}, err error) {
+
+	_, err = self.LoadMarkets()
+	if err != nil {
+		return
+	}
+
+	request := map[string]interface{}{
+		"status": status,
+	}
+
+	var market interface{}
+
+	if self.ToBool(!self.TestNil(symbol)) {
+		market = self.Market(symbol)
+		self.SetValue(request, "symbol", self.Member(market, "id"))
+	}
+
+	if self.ToBool(!self.TestNil(since)) {
+		self.SetValue(request, "startAt", since)
+	}
+
+	if self.ToBool(!self.TestNil(limit)) {
+		self.SetValue(request, "pageSize", limit)
+	}
+
+	response, err := self.ApiFunc("privateGetOrders", self.Extend(request, params), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	responseData := self.SafeValue(response, "data", map[string]interface{}{})
+
+	orders = self.SafeValue(responseData, "items", []interface{}{})
+
+	return self.ParseOrders(orders, market, since, limit), nil
+
+}
+
+func (self *Kucoin) FetchOpenOrders(symbol string, since int64, limit int64, params map[string]interface{}) (orders interface{}, err error) {
+
+	return self.FetchOrdersByStatus("active", symbol, since, limit, params)
+
+}
+
+func (self *Kucoin) FetchOrder(id string, symbol string, params map[string]interface{}) (order interface{}, err error) {
+
 	_, err = self.LoadMarkets()
 	if err != nil {
 		return
@@ -440,22 +583,23 @@ func (self *Kucoin) FetchOrder(id string, symbol string, params map[string]inter
 
 	var market interface{}
 
-	if self.ToBool(self.TestNil(symbol)) {
+	if self.ToBool(!self.TestNil(symbol)) {
 		market = self.Market(symbol)
 	}
 
 	response, err := self.ApiFunc("privateGetOrdersOrderId", self.Extend(request, params), nil, nil)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	responseData := self.Member(response, "data")
 
-	return (&Order{}).InitFromMap(self.ParseOrder(responseData, market))
+	return self.ParseOrder(responseData, market), nil
 
 }
 
-func (self *Kucoin) ParseOrder(order interface{}, market interface{}) map[string]interface{} {
+func (self *Kucoin) ParseOrder(order interface{}, market interface{}) (result interface{}) {
+
 	var symbol interface{}
 
 	marketId := self.SafeString(order, "symbol", "")
@@ -549,63 +693,111 @@ func (self *Kucoin) ParseOrder(order interface{}, market interface{}) map[string
 
 }
 
-func (self *Kucoin) CancelOrder(id string, symbol string, params map[string]interface{}) (response interface{}, err error) {
-
-	request := map[string]interface{}{
-		"orderId": id,
-	}
-
-	response, err = self.ApiFunc("privateDeleteOrdersOrderId", self.Extend(request, params), nil, nil)
-	if err != nil {
-		return
-	}
-
-	return response, nil
-
-}
-
-func (self *Kucoin) FetchOrdersByStatus(status string, symbol string, since int64, limit int64, params map[string]interface{}) (result interface{}, err error) {
+func (self *Kucoin) FetchBalance(params map[string]interface{}) (balanceResult *Account, err error) {
 
 	_, err = self.LoadMarkets()
 	if err != nil {
 		return
 	}
 
-	request := map[string]interface{}{
-		"status": status,
+	var typ interface{}
+
+	request := map[string]interface{}{}
+
+	if self.ToBool(self.InMap("type", params)) {
+		typ = self.Member(params, "type")
+		if self.ToBool(!self.TestNil(typ)) {
+			self.SetValue(request, "type", typ)
+		}
+		params = self.Omit(params, "type")
+	} else {
+		options := self.SafeValue(self.Options, "fetchBalance", map[string]interface{}{})
+		typ = self.SafeString(options, "type", "trade")
 	}
 
-	var market interface{}
-
-	if self.ToBool(self.TestNil(symbol)) {
-		market = self.Market(symbol)
-		self.SetValue(request, "symbol", self.Member(market, "id"))
-	}
-
-	if self.ToBool(self.TestNil(since)) {
-		self.SetValue(request, "startAt", since)
-	}
-
-	if self.ToBool(self.TestNil(limit)) {
-		self.SetValue(request, "pageSize", limit)
-	}
-
-	response, err := self.ApiFunc("privateGetOrders", self.Extend(request, params), nil, nil)
+	response, err := self.ApiFunc("privateGetAccounts", self.Extend(request, params), nil, nil)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	responseData := self.SafeValue(response, "data", map[string]interface{}{})
+	data := self.SafeValue(response, "data", []interface{}{})
 
-	orders := self.SafeValue(responseData, "items", []interface{}{})
+	result := map[string]interface{}{
+		"info": response,
+	}
 
-	return self.ParseOrders(orders, market, since, limit), nil
+	for i := 0; i < self.Length(data); i++ {
+		balance := self.Member(data, i)
+		balanceType := self.SafeString(balance, "type", "")
+		if self.ToBool(balanceType == typ) {
+			currencyId := self.SafeString(balance, "currency", "")
+			code := self.SafeCurrencyCode(currencyId)
+			account := self.Account()
+			self.SetValue(account, "total", self.SafeFloat(balance, "balance", 0))
+			self.SetValue(account, "free", self.SafeFloat(balance, "available", 0))
+			self.SetValue(account, "used", self.SafeFloat(balance, "holds", 0))
+			self.SetValue(result, code, account)
+		}
+	}
+
+	return self.ParseBalance(result), nil
+
 }
 
-func (self *Kucoin) FetchOpenOrders(symbol string, since int64, limit int64, params map[string]interface{}) (orders []*Order, err error) {
-	resp, err := self.FetchOrdersByStatus("active", symbol, since, limit, params)
-	if err != nil {
-		return
+func (self *Kucoin) Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (ret interface{}, err error) {
+
+	versions := self.SafeValue(self.Options, "versions", map[string]interface{}{})
+
+	apiVersions := self.SafeValue(versions, api, nil)
+
+	methodVersions := self.SafeValue(apiVersions, method, map[string]interface{}{})
+
+	defaultVersion := self.SafeString(methodVersions, path, self.Member(self.Options, "version"))
+
+	version := self.SafeString(params, "version", defaultVersion)
+
+	params = self.Omit(params, "version")
+
+	endpoint := "/api/" + version + "/" + self.ImplodeParams(path, params)
+
+	query := self.Omit(params, self.ExtractParams(path))
+
+	endpart := ""
+
+	headers = self.IfThenElse(self.ToBool(!self.TestNil(headers)), headers, map[string]interface{}{})
+
+	if self.ToBool(self.Length(reflect.ValueOf(query).MapKeys())) {
+		if self.ToBool(method != "GET") {
+			endpart = self.Json(query)
+			self.SetValue(headers, "Content-Type", "application/json")
+		} else {
+			endpoint += "?" + self.Urlencode(query)
+		}
 	}
-	return self.ToOrders(resp)
+
+	url := fmt.Sprintf("%v", self.Member(self.Member(self.Urls, "api"), api)) + endpoint
+
+	if self.ToBool(api == "private") {
+		self.CheckRequiredCredentials()
+		timestamp := fmt.Sprintf("%v", self.Nonce())
+		headers = self.Extend(map[string]interface{}{
+			"KC-API-KEY":        self.ApiKey,
+			"KC-API-TIMESTAMP":  timestamp,
+			"KC-API-PASSPHRASE": self.Password,
+		}, headers)
+		payload := timestamp + method + endpoint + endpart
+		signature, err := self.Hmac(self.Encode(payload), self.Encode(self.Secret), "sha256", "base64")
+		if err != nil {
+			return nil, err
+		}
+		self.SetValue(headers, "KC-API-SIGN", self.Decode(signature))
+	}
+
+	return map[string]interface{}{
+		"url":     url,
+		"method":  method,
+		"body":    endpart,
+		"headers": headers,
+	}, nil
+
 }
