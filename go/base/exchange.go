@@ -294,18 +294,19 @@ type FundingFees struct {
 	Withdraw   map[string]float64 `json:"withdraw"`
 }
 
-// Account details
-type Account struct {
-	Free  map[string]float64 `json:"free"`
-	Used  map[string]float64 `json:"used"`
-	Total map[string]float64 `json:"total"`
-}
-
 // Balance details
 type Balance struct {
 	Free  float64 `json:"free"`
 	Used  float64 `json:"used"`
 	Total float64 `json:"total"`
+}
+
+// Account details
+type Account struct {
+	Free    map[string]float64 `json:"free"`
+	Used    map[string]float64 `json:"used"`
+	Total   map[string]float64 `json:"total"`
+	Account map[string]*Balance
 }
 
 // Order structure
@@ -1460,12 +1461,16 @@ func (self *Exchange) ParseBalance(balances map[string]interface{}) (pAccount *A
 	account.Used = make(map[string]float64)
 	account.Total = make(map[string]float64)
 
+	account.Account = map[string]*Balance{}
 	for currency, balance := range self.Omit(balances, []string{"info", "free", "used", "total"}) {
 		if balance, ok := balance.(map[string]interface{}); ok {
-			log.Println(currency, balance)
-			account.Free[currency] = self.SafeFloat(balance, "free", 0)
-			account.Used[currency] = self.SafeFloat(balance, "used", 0)
-			account.Total[currency] = self.SafeFloat(balance, "total", 0)
+			free := self.SafeFloat(balance, "free", 0)
+			used := self.SafeFloat(balance, "used", 0)
+			total := self.SafeFloat(balance, "used", 0)
+			account.Free[currency] = free
+			account.Used[currency] = used
+			account.Total[currency] = total
+			account.Account[currency] = &Balance{Free: free, Used: used, Total: total}
 		}
 	}
 
