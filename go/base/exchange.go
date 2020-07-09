@@ -782,7 +782,7 @@ func (self *Exchange) Request(
 ) (response []byte, err error) {
 	signInfo, err := self.Child.Sign(path, api, method, params, headers, body)
 	if self.Verbose {
-		fmt.Println("signinfo", signInfo)
+		//fmt.Println("signinfo", signInfo)
 	}
 	if err != nil {
 		return
@@ -830,7 +830,7 @@ func (self *Exchange) Fetch(url string, method string, headers map[string]interf
 	}
 
 	if self.Verbose {
-		log.Println("\nRequest:", method, url, headers, body)
+		log.Println("Request:", method, url, headers, body)
 	}
 
 	resp, err := self.Client.Do(req)
@@ -841,7 +841,7 @@ func (self *Exchange) Fetch(url string, method string, headers map[string]interf
 	response, err = ioutil.ReadAll(resp.Body)
 
 	if self.Verbose {
-		log.Println("\nResponse:", method, url, resp.StatusCode, resp.Header, string(response))
+		log.Println("Response:", method, url, resp.StatusCode, resp.Header, string(response))
 	}
 
 	if resp.StatusCode != 200 {
@@ -883,7 +883,7 @@ func (self *Exchange) DefineRestApi() (err error) {
 								self.ApiDecodeInfo[strApi+strings.Title(strMethod)+strDealPath] = &ApiDecode{Api: strApi, Method: strings.ToUpper(strMethod), Path: strPath}
 
 								if self.Verbose {
-									log.Println("\napiDecodeInfo:", strApi, strPath, strMethod, strDealPath)
+									//log.Println("\napiDecodeInfo:", strApi, strPath, strMethod, strDealPath)
 								}
 							}
 						}
