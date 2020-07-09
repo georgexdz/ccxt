@@ -526,7 +526,7 @@ type ExchangeInterface interface {
 	// FetchTickers(symbols []string, params map[string]interface{}) (map[string]Ticker, error)
 	// FetchTicker(symbol string, params map[string]interface{}) (Ticker, error)
 	// FetchOHLCV(symbol, tf string, since *JSONTime, limit *int, params map[string]interface{}) ([]OHLCV, error)
-	FetchOrderBook(symbol string, limit int, params map[string]interface{}) (*OrderBook, error)
+	FetchOrderBook(symbol string, limit int64, params map[string]interface{}) (*OrderBook, error)
 	// FetchL2OrderBook(symbol string, limit *int, params map[string]interface{}) (OrderBook, error)
 	// FetchTrades(symbol string, since *JSONTime, params map[string]interface{}) ([]Trade, error)
 	FetchOrder(id string, symbol string, params map[string]interface{}) (*Order, error)
@@ -626,7 +626,7 @@ func (self *Exchange) Describe() []byte {
 func (self *Exchange) FetchMarkets(params map[string]interface{}) (interface{}, error) {
 	return nil, nil
 }
-func (self *Exchange) FetchOrderBook(symbol string, limit int, params map[string]interface{}) (*OrderBook, error) {
+func (self *Exchange) FetchOrderBook(symbol string, limit int64, params map[string]interface{}) (*OrderBook, error) {
 	return nil, errors.New("FetchOrderBook not supported yet")
 }
 
@@ -754,7 +754,7 @@ func (self *Exchange) LoadMarkets() (map[string]*Market, error) {
 			for _, oneMarket := range marketSliceData {
 				if oneMarketMap, ok := oneMarket.(map[string]interface{}); ok {
 					oneMarket := &Market{
-						Id: oneMarketMap["id"].(string),
+						Id:     oneMarketMap["id"].(string),
 						Symbol: oneMarketMap["symbol"].(string),
 					}
 					markets = append(markets, oneMarket)
@@ -1359,13 +1359,13 @@ func (self *Exchange) SafeString2(d interface{}, key1 string, key2 string, Defau
 	if d, ok := d.(map[string]interface{}); ok {
 		if val, ok := d[key1]; ok {
 			if strVal, ok := val.(string); ok {
-		        return strVal
-		    }
+				return strVal
+			}
 		}
 		if val, ok := d[key2]; ok {
 			if strVal, ok := val.(string); ok {
-		        return strVal
-		    }
+				return strVal
+			}
 		}
 	}
 	return DefaultValue.(string)
@@ -1744,6 +1744,11 @@ func (self *Exchange) ParseOrder(order interface{}, market interface{}) map[stri
 	return order.(map[string]interface{})
 }
 
+func (self *Exchange) ToOrder(order interface{}) (result *Order, err error) {
+	result = &Order{}
+	return result.InitFromMap(order.(map[string]interface{}))
+}
+
 func (self *Exchange) ToOrders(orders interface{}) (result []*Order, err error) {
 	for _, o := range orders.([]map[string]interface{}) {
 		order, err := (&Order{}).InitFromMap(o)
@@ -1769,10 +1774,6 @@ func (self *Exchange) Capitalize(s string) string {
 
 func (self *Exchange) Nonce() int64 {
 	return self.Milliseconds()
-}
-
-func (self *Exchange) ParseOrders(orders interface{}, market interface{}, since interface{}, limit interface{}) interface{} {
-	return orders
 }
 
 func (self *Exchange) PrecisionFromString(s string) int {
