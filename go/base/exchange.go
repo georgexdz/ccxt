@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dgrijalva/jwt-go"
 	"hash"
 	"io/ioutil"
 	"log"
@@ -21,10 +20,13 @@ import (
 	"net/url"
 	"reflect"
 	"regexp"
+	//"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dgrijalva/jwt-go"
 	"github.com/satori/go.uuid"
 )
 
@@ -85,23 +87,23 @@ type MinMax struct {
 // ExchangeConfig for main configuration
 // Timeout takes json value in milliseconds
 type ExchangeConfig struct {
-	ApiKey          string        `json:"apiKey"`
+	ApiKey          string `json:"apiKey"`
 	Password        string
 	Secret          string        `json:"secret"`
 	Timeout         time.Duration `json:"timeout"`
 	EnableRateLimit bool          `json:"enableRateLimit"`
 	Test            bool          `json:"test"`
+	Verbose         bool          `json:"verbose"`
 }
 
 // ExchangeInfo for the exchange
 type ExchangeInfo struct {
-	Id                               string            `json:"id"`
-	Name                             string            `json:"name"`
-	Countries                        StringSlice       `json:"countries"`
-	Version                          string            `json:"version"`
-	EnableRateLimit                  bool              `json:"enableRateLimit"`
-	RateLimit                        int               `json:"rateLimit"`
-	Has                              HasDescription    `json:"has"`
+	Id                               string         `json:"id"`
+	Name                             string         `json:"name"`
+	Countries                        StringSlice    `json:"countries"`
+	Version                          string         `json:"version"`
+	RateLimit                        int            `json:"rateLimit"`
+	Has                              HasDescription `json:"has"`
 	Urls                             map[string]interface{}
 	Api                              Apis              `json:"api"`
 	Timeframes                       map[string]string `json:"timeframes"`
@@ -110,7 +112,6 @@ type ExchangeInfo struct {
 	Header                           http.Header       `json:"header"`
 	Proxy                            string            `json:"proxy"`
 	Origin                           string            `json:"origin"`
-	Verbose                          bool              `json:"verbose"`
 	Limits                           Limits            `json:"limits"`
 	Precision                        Precision         `json:"precision"`
 	Exceptions                       Exceptions        `json:"exceptions"`
@@ -295,13 +296,6 @@ type FundingFees struct {
 	Withdraw   map[string]float64 `json:"withdraw"`
 }
 
-// Account details
-type Account struct {
-	Free  map[string]float64 `json:"free"`
-	Used  map[string]float64 `json:"used"`
-	Total map[string]float64 `json:"total"`
-}
-
 // Balance details
 type Balance struct {
 	Free  float64 `json:"free"`
@@ -309,33 +303,94 @@ type Balance struct {
 	Total float64 `json:"total"`
 }
 
-// Order structure
-type Order struct {
-	Id        string      `json:"id"`
-	Timestamp JSONTime    `json:"timestamp"`
-	Datetime  string      `json:"datetime"`
-	Symbol    string      `json:"symbol"`
-	Status    string      `json:"status"`
-	Type      string      `json:"type"`
-	Side      string      `json:"side"`
-	Price     float64     `json:"price"`
-	Cost      float64     `json:"cost"`
-	Amount    float64     `json:"amount"`
-	Filled    float64     `json:"filled"`
-	Remaining float64     `json:"remaining"`
-	Fee       float64     `json:"fee"`
-	Info      interface{} `json:"info"`
+// Account details
+type Account struct {
+	Free    map[string]float64 `json:"free"`
+	Used    map[string]float64 `json:"used"`
+	Total   map[string]float64 `json:"total"`
+	Account map[string]*Balance
 }
 
-func (o Order) String() string {
-	return fmt.Sprintf("%s %f %s @%f (filled: %f)",
-		o.Side, o.Amount, o.Symbol, o.Price, o.Filled)
+// Order structure
+type Order struct {
+	Id            string      `json:"id"`
+	ClientOrderId string      `json:"clientOrderId"`
+	Timestamp     int64       `json:"timestamp"`
+	Datetime      string      `json:"datetime"`
+	Symbol        string      `json:"symbol"`
+	Status        string      `json:"status"`
+	Type          string      `json:"type"`
+	Side          string      `json:"side"`
+	Price         float64     `json:"price"`
+	Cost          float64     `json:"cost"`
+	Amount        float64     `json:"amount"`
+	Filled        float64     `json:"filled"`
+	Remaining     float64     `json:"remaining"`
+	Fee           float64     `json:"fee"`
+	Info          interface{} `json:"info"`
+}
+
+//func (o Order) String() string {
+//	return fmt.Sprintf("%s %f %s @%f (filled: %f)",
+//		o.Side, o.Amount, o.Symbol, o.Price, o.Filled)
+//}
+
+func (o *Order) InitFromMap(m map[string]interface{}) (result *Order, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("error order: %s: %v", fmt.Sprint(m), r)
+			//debug.PrintStack()
+		}
+	}()
+
+	for k, v := range m {
+		if v == nil {
+			continue
+		}
+		switch k {
+		case "id":
+			o.Id = v.(string)
+		case "symbol":
+			o.Symbol = v.(string)
+		case "type":
+			o.Type = v.(string)
+		case "side":
+			o.Side = v.(string)
+		case "price":
+			o.Price = v.(float64)
+		case "amount":
+			o.Amount = v.(float64)
+		case "cost":
+			o.Cost = v.(float64)
+		case "filled":
+			o.Filled = v.(float64)
+		case "remaining":
+			o.Remaining = v.(float64)
+		case "timestamp":
+			o.Timestamp = v.(int64)
+		case "datetime":
+			o.Datetime = v.(string)
+		case "fee":
+			// NOTE: fee 有可能是字典也可能是浮点, 暂时无视
+			//o.Fee = v.(float64)
+		case "status":
+			o.Status = v.(string)
+		case "clientOrderId":
+			o.ClientOrderId = v.(string)
+		case "info":
+			o.Info = v
+		default:
+			// ignore
+		}
+	}
+	result = o
+	return
 }
 
 // OrderBook struct
 type OrderBook struct {
-	Asks      [][]float64
-	Bids      [][]float64
+	Asks      [][2]float64
+	Bids      [][2]float64
 	Timestamp int64
 	Datetime  string
 	Nonce     string
@@ -423,8 +478,8 @@ type DepositAddress struct {
 }
 
 type ApiDecode struct {
-	Path string
-	Api string
+	Path   string
+	Api    string
 	Method string
 }
 
@@ -471,20 +526,22 @@ type ExchangeInterface interface {
 	// FetchTickers(symbols []string, params map[string]interface{}) (map[string]Ticker, error)
 	// FetchTicker(symbol string, params map[string]interface{}) (Ticker, error)
 	// FetchOHLCV(symbol, tf string, since *JSONTime, limit *int, params map[string]interface{}) ([]OHLCV, error)
-	// FetchOrderBook(symbol string, limit *int, params map[string]interface{}) (OrderBook, error)
+	FetchOrderBook(symbol string, limit int64, params map[string]interface{}) (*OrderBook, error)
 	// FetchL2OrderBook(symbol string, limit *int, params map[string]interface{}) (OrderBook, error)
 	// FetchTrades(symbol string, since *JSONTime, params map[string]interface{}) ([]Trade, error)
-	// FetchOrder(id string, symbol *string, params map[string]interface{}) (Order, error)
+	FetchOrder(id string, symbol string, params map[string]interface{}) (*Order, error)
 	// FetchOrders(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Order, error)
-	// FetchOpenOrders(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Order, error)
+	FetchOpenOrders(symbol string, since int64, limit int64, params map[string]interface{}) ([]*Order, error)
 	// FetchClosedOrders(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Order, error)
 	// FetchMyTrades(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Trade, error)
-	// FetchBalance(params map[string]interface{}) (Balances, error)
+	FetchBalance(params map[string]interface{}) (*Account, error)
 	//FetchCurrencies() (map[string]*Currency, error)
 	FetchMarkets(params map[string]interface{}) (interface{}, error)
 
-	// CreateOrder(symbol, t, side string, amount float64, price *float64, params map[string]interface{}) (Order, error)
-	// CancelOrder(id string, symbol *string, params map[string]interface{}) error
+	CreateOrder(symbol, otype, side string, amount float64, price float64, params map[string]interface{}) (*Order, error)
+	LimitBuy(symbol string, price, amount float64, params map[string]interface{}) (*Order, error)
+	LimitSell(symbol string, price, amount float64, params map[string]interface{}) (*Order, error)
+	CancelOrder(id string, symbol string, params map[string]interface{}) (interface{}, error)
 
 	// Describe() []byte
 	//GetMarkets() map[string]*Market
@@ -505,6 +562,11 @@ type ExchangeInterface interface {
 	// CreateLimitSellOrder(symbol string, amount float64, price *float64, params map[string]interface{}) (Order, error)
 	// CreateMarketBuyOrder(symbol string, amount float64, params map[string]interface{}) (Order, error)
 	// CreateMarketSellOrder(symbol string, amount float64, params map[string]interface{}) (Order, error)
+
+	SetApiKey(string)
+	SetSecret(string)
+	SetPassword(string)
+	SetUid(string)
 }
 
 type ExchangeInterfaceInternal interface {
@@ -515,6 +577,7 @@ type ExchangeInterfaceInternal interface {
 	Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response []byte, err error)
 	Request(path string, api string, method string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (response []byte, err error)
 	Describe() []byte
+	ParseOrder(interface{}, interface{}) map[string]interface{}
 }
 
 // Exchange struct
@@ -530,15 +593,19 @@ type Exchange struct {
 	Currencies     map[string]*Currency
 	CurrenciesById map[string]*Currency
 
-	Child ExchangeInterfaceInternal
+	Child         ExchangeInterfaceInternal
 	ApiDecodeInfo map[string]*ApiDecode
-	ApiUrls map[string]string
-	DescribeMap map[string]interface{}
-	Options map[string]interface{}
+	ApiUrls       map[string]string
+	DescribeMap   map[string]interface{}
+	Options       map[string]interface{}
 }
 
 func (self *Exchange) Init(config *ExchangeConfig) (err error) {
 	self.Child = self
+
+	if config != nil {
+		self.ExchangeConfig = *config
+	}
 
 	tr := &http.Transport{
 		Proxy:           http.ProxyFromEnvironment,
@@ -552,12 +619,15 @@ func (self *Exchange) Init(config *ExchangeConfig) (err error) {
 	return
 }
 
-func (self *Exchange) Describe() ([]byte) {
+func (self *Exchange) Describe() []byte {
 	return nil
 }
 
 func (self *Exchange) FetchMarkets(params map[string]interface{}) (interface{}, error) {
 	return nil, nil
+}
+func (self *Exchange) FetchOrderBook(symbol string, limit int64, params map[string]interface{}) (*OrderBook, error) {
+	return nil, errors.New("FetchOrderBook not supported yet")
 }
 
 func (self *Exchange) Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (interface{}, error) {
@@ -684,7 +754,7 @@ func (self *Exchange) LoadMarkets() (map[string]*Market, error) {
 			for _, oneMarket := range marketSliceData {
 				if oneMarketMap, ok := oneMarket.(map[string]interface{}); ok {
 					oneMarket := &Market{
-						Id: oneMarketMap["id"].(string),
+						Id:     oneMarketMap["id"].(string),
 						Symbol: oneMarketMap["symbol"].(string),
 					}
 					markets = append(markets, oneMarket)
@@ -732,21 +802,20 @@ func (self *Exchange) Request(
 ) (response []byte, err error) {
 	signInfo, err := self.Child.Sign(path, api, method, params, headers, body)
 	if self.Verbose {
-		fmt.Println("signinfo", signInfo)
+		//fmt.Println("signinfo", signInfo)
 	}
 	if err != nil {
 		return
 	}
-	fmt.Println(signInfo)
 	return self.Child.Fetch(
 		self.Member(signInfo, "url").(string),
 		self.Member(signInfo, "method").(string),
 		self.Member(signInfo, "headers").(map[string]interface{}),
 		self.Member(signInfo, "body"),
-		)
+	)
 }
 
-func (self *Exchange) PrepareRequestHeaders(req* http.Request, headers map[string]interface{}) error {
+func (self *Exchange) PrepareRequestHeaders(req *http.Request, headers map[string]interface{}) error {
 	//req.Header.Set("Accept-Encoding", "gzip, deflate")
 
 	for k, v := range headers {
@@ -781,7 +850,7 @@ func (self *Exchange) Fetch(url string, method string, headers map[string]interf
 	}
 
 	if self.Verbose {
-		log.Println("\nRequest:", method, url, headers, body)
+		log.Println("Request:", method, url, headers, body)
 	}
 
 	resp, err := self.Client.Do(req)
@@ -790,13 +859,16 @@ func (self *Exchange) Fetch(url string, method string, headers map[string]interf
 	}
 	defer resp.Body.Close()
 	response, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
 
 	if self.Verbose {
-		log.Println("\nResponse:", method, url, resp.StatusCode, resp.Header, string(response))
+		log.Println("Response:", method, url, resp.StatusCode, resp.Header, string(response))
 	}
 
 	if resp.StatusCode != 200 {
-		err = errors.New("not 200")
+		err = fmt.Errorf("%s %s %d %s %s", method, url, resp.StatusCode, http.StatusText(resp.StatusCode), string(response))
 		return
 	}
 
@@ -804,16 +876,16 @@ func (self *Exchange) Fetch(url string, method string, headers map[string]interf
 }
 
 func (self *Exchange) RegSplit(text string, delimeter string) (result []string) {
-    reg := regexp.MustCompile(delimeter)
-    indexes := reg.FindAllStringIndex(text, -1)
-    laststart := 0
-    result = make([]string, len(indexes) + 1)
-    for i, element := range indexes {
-            result[i] = text[laststart:element[0]]
-            laststart = element[1]
-    }
-    result[len(indexes)] = text[laststart:len(text)]
-    return result
+	reg := regexp.MustCompile(delimeter)
+	indexes := reg.FindAllStringIndex(text, -1)
+	laststart := 0
+	result = make([]string, len(indexes)+1)
+	for i, element := range indexes {
+		result[i] = text[laststart:element[0]]
+		laststart = element[1]
+	}
+	result[len(indexes)] = text[laststart:len(text)]
+	return result
 }
 
 func (self *Exchange) DefineRestApi() (err error) {
@@ -821,7 +893,7 @@ func (self *Exchange) DefineRestApi() (err error) {
 
 	if jsonApiInfo, ok := self.DescribeMap["api"].(map[string]interface{}); ok {
 		for strApi, apiInfo := range jsonApiInfo {
-			if methodInfo, ok:= apiInfo.(map[string]interface{}); ok {
+			if methodInfo, ok := apiInfo.(map[string]interface{}); ok {
 				for strMethod, methodInfo := range methodInfo {
 					if pathList, ok := methodInfo.([]interface{}); ok {
 						for _, path := range pathList {
@@ -834,7 +906,7 @@ func (self *Exchange) DefineRestApi() (err error) {
 								self.ApiDecodeInfo[strApi+strings.Title(strMethod)+strDealPath] = &ApiDecode{Api: strApi, Method: strings.ToUpper(strMethod), Path: strPath}
 
 								if self.Verbose {
-									log.Println("\napiDecodeInfo:", strApi, strPath, strMethod, strDealPath)
+									//log.Println("\napiDecodeInfo:", strApi, strPath, strMethod, strDealPath)
 								}
 							}
 						}
@@ -1074,7 +1146,7 @@ func (self *Exchange) SetMarkets(markets []Market, currencies map[string]Currenc
 }
 */
 
-func SortSliceByIndex(s [][]float64, idx int, descending bool) {
+func SortSliceByIndex(s [][2]float64, idx int, descending bool) {
 	if !descending {
 		sort.Slice(s, func(i, j int) bool {
 			// edge cases
@@ -1116,7 +1188,7 @@ func ToFloat(x interface{}) (float64, error) {
 	return 0, nil
 }
 
-func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amountKey int64, out *[][]float64) error {
+func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amountKey int64, out *[][2]float64) error {
 	if len(bidsAsks) == 0 {
 		return nil
 	}
@@ -1130,7 +1202,7 @@ func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amou
 					priceF, err1 := ToFloat(price)
 					amountF, err2 := ToFloat(amount)
 					if err1 == nil && err2 == nil {
-						*out = append(*out, []float64{priceF, amountF})
+						*out = append(*out, [2]float64{priceF, amountF})
 					}
 				}
 			}
@@ -1142,7 +1214,6 @@ func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amou
 
 	return nil
 }
-
 
 func (self *Exchange) Extend(maps ...interface{}) interface{} {
 	size := len(maps)
@@ -1242,7 +1313,7 @@ func NestedMapLookup(m map[string]interface{}, ks ...string) (rval interface{}, 
 	}
 }
 
-func (self *Exchange) ParseOrderBook(orderBook interface{}, timeStamp int64, bidsKey string, asksKey string, priceKey int64, amountKey int64) (interface{}, error) {
+func (self *Exchange) ParseOrderBook(orderBook interface{}, timeStamp int64, bidsKey string, asksKey string, priceKey int64, amountKey int64) (*OrderBook, error) {
 	var result OrderBook
 
 	if orderBookMap, ok := orderBook.(map[string]interface{}); ok {
@@ -1265,7 +1336,7 @@ func (self *Exchange) ParseOrderBook(orderBook interface{}, timeStamp int64, bid
 		result.Timestamp = timeStamp
 		// result.Datetime = time.Unix(timeStamp/1000, 0).Format("2006-01-02 15:04:05")
 
-		return result, nil
+		return &result, nil
 	}
 
 	return nil, nil
@@ -1276,9 +1347,11 @@ func (self *Exchange) SafeInteger(d interface{}, key string, defaultVal int64) (
 		if val, ok := d[key]; ok {
 			if intVal, ok := val.(int64); ok {
 				return intVal
-				}
+			} else if val, ok := val.(float64); ok {
+				return int64(val)
 			}
 		}
+	}
 	return defaultVal
 }
 
@@ -1286,13 +1359,13 @@ func (self *Exchange) SafeString2(d interface{}, key1 string, key2 string, Defau
 	if d, ok := d.(map[string]interface{}); ok {
 		if val, ok := d[key1]; ok {
 			if strVal, ok := val.(string); ok {
-		        return strVal
-		    }
+				return strVal
+			}
 		}
 		if val, ok := d[key2]; ok {
 			if strVal, ok := val.(string); ok {
-		        return strVal
-		    }
+				return strVal
+			}
 		}
 	}
 	return DefaultValue.(string)
@@ -1302,8 +1375,8 @@ func (self *Exchange) SafeString(d interface{}, key string, DefaultValue interfa
 	if d, ok := d.(map[string]interface{}); ok {
 		if val, ok := d[key]; ok {
 			if strVal, ok := val.(string); ok {
-		        return strVal
-		    }
+				return strVal
+			}
 		}
 	}
 	return DefaultValue.(string)
@@ -1312,11 +1385,22 @@ func (self *Exchange) SafeString(d interface{}, key string, DefaultValue interfa
 func (self *Exchange) SafeFloat(d interface{}, key string, DefaultValue float64) (result float64) {
 	if d, ok := d.(map[string]interface{}); ok {
 		if val, ok := d[key]; ok {
-			if strVal, ok := val.(string); ok {
-				fVal, err := strconv.ParseFloat(strVal, 64)
+			switch val.(type) {
+			case string:
+				fVal, err := strconv.ParseFloat(val.(string), 64)
 				if err == nil {
 					return fVal
 				}
+			case int:
+				return float64(val.(int))
+			case int64:
+				return float64(val.(int64))
+			case float32:
+				return float64(val.(float32))
+			case float64:
+				return val.(float64)
+			case nil:
+				return DefaultValue
 			}
 		}
 	}
@@ -1346,7 +1430,6 @@ func (self *Exchange) ExtractParams(s string) (result []string) {
 	matches := r.FindAllStringSubmatch(s, -1)
 	for _, v := range matches {
 		result = append(result, v[1])
-		fmt.Println(v[1])
 	}
 	return result
 }
@@ -1354,11 +1437,12 @@ func (self *Exchange) ExtractParams(s string) (result []string) {
 func (self *Exchange) ImplodeParams(s string, params interface{}) string {
 	if paramsMap, ok := params.(map[string]interface{}); ok {
 		for k, v := range paramsMap {
-			s = strings.ReplaceAll(s, "{" + k + "}", fmt.Sprintf("%v", v))
+			s = strings.ReplaceAll(s, "{"+k+"}", fmt.Sprintf("%v", v))
 		}
 	}
 	return s
 }
+
 var hashers = map[string]func() hash.Hash{
 	"sha1":   sha1.New,
 	"sha256": sha256.New,
@@ -1422,11 +1506,16 @@ func (self *Exchange) ParseBalance(balances map[string]interface{}) (pAccount *A
 	account.Used = make(map[string]float64)
 	account.Total = make(map[string]float64)
 
+	account.Account = map[string]*Balance{}
 	for currency, balance := range self.Omit(balances, []string{"info", "free", "used", "total"}) {
-		if balance, ok := balance.(Balance); ok {
-			account.Free[currency] = balance.Free
-			account.Used[currency] = balance.Used
-			account.Total[currency] = balance.Total
+		if balance, ok := balance.(map[string]interface{}); ok {
+			free := self.SafeFloat(balance, "free", 0)
+			used := self.SafeFloat(balance, "used", 0)
+			total := self.SafeFloat(balance, "used", 0)
+			account.Free[currency] = free
+			account.Used[currency] = used
+			account.Total[currency] = total
+			account.Account[currency] = &Balance{Free: free, Used: used, Total: total}
 		}
 	}
 
@@ -1447,10 +1536,10 @@ func (self *Exchange) AmountToPrecision(symbol string, amount float64) string {
 	return ret
 }
 
-func (self *Exchange) Account() (map[string]interface{}) {
-	return map[string]interface{} {
-		"free": nil,
-		"used": nil,
+func (self *Exchange) Account() map[string]interface{} {
+	return map[string]interface{}{
+		"free":  nil,
+		"used":  nil,
 		"total": nil,
 	}
 }
@@ -1473,24 +1562,22 @@ func (self *Exchange) Length(o interface{}) int {
 	}
 }
 
-func (self *Exchange) Member (o interface{}, idx interface{}) interface{} {
+func (self *Exchange) Member(o interface{}, idx interface{}) interface{} {
 	switch reflect.TypeOf(o).Kind() {
-    case reflect.Slice:
-        return reflect.ValueOf(o).Index(idx.(int)).Interface()
-    case reflect.Map:
-        return reflect.ValueOf(o).MapIndex(reflect.ValueOf(idx)).Interface()
-    case reflect.Struct:
-    	field := strings.Title(idx.(string))
-        return reflect.ValueOf(o).FieldByName(field).Interface()
+	case reflect.Slice:
+		return reflect.ValueOf(o).Index(idx.(int)).Interface()
+	case reflect.Map:
+		return reflect.ValueOf(o).MapIndex(reflect.ValueOf(idx)).Interface()
+	case reflect.Struct:
+		return reflect.ValueOf(o).FieldByName(self.Capitalize(idx.(string))).Interface()
 	case reflect.Ptr:
-    	field := strings.Title(idx.(string))
-		return reflect.Indirect(reflect.ValueOf(o)).FieldByName(field)
-    }
+		return reflect.Indirect(reflect.ValueOf(o)).FieldByName(self.Capitalize(idx.(string)))
+	}
 
 	return nil
 }
 
-func (self *Exchange) Market (symbol string) (*Market){
+func (self *Exchange) Market(symbol string) *Market {
 	if self.Markets == nil {
 		return nil
 	}
@@ -1503,7 +1590,7 @@ func (self *Exchange) Market (symbol string) (*Market){
 	}
 }
 
-func (self *Exchange)Unpack2(l interface{}) (interface{}, interface{}) {
+func (self *Exchange) Unpack2(l interface{}) (interface{}, interface{}) {
 	switch l.(type) {
 	case []string:
 		if ll, ok := l.([]string); ok {
@@ -1520,44 +1607,44 @@ func (self *Exchange)Unpack2(l interface{}) (interface{}, interface{}) {
 	default:
 		return nil, nil
 	}
-	return  nil,nil
+	return nil, nil
 }
 
 func (self *Exchange) IfThenElse(condition bool, a interface{}, b interface{}) interface{} {
-    if condition {
-        return a
-    }
-    return b
+	if condition {
+		return a
+	}
+	return b
 }
 
-func (self *Exchange) TestNil (x interface{}) bool {
+func (self *Exchange) TestNil(x interface{}) bool {
 	switch x.(type) {
 	case string:
-		return x.(string) == ""
+		return x.(string) != ""
 	case int:
-		return x.(int) == 0
+		return x.(int) != 0
 	case int64:
-		return x.(int64) == 0
+		return x.(int64) != 0
 	case float64:
-		return x.(float64) == 0.
+		return x.(float64) != 0.
 	case float32:
-		return x.(float32) == 0.
+		return x.(float32) != 0.
 	default:
 		return true
 	}
 }
 
-func (self *Exchange) SetValue (x interface{}, k string, v interface{}) {
+func (self *Exchange) SetValue(x interface{}, k string, v interface{}) {
 	if m, ok := x.(map[string]interface{}); ok {
 		m[k] = v
 	}
 }
 
-func (self *Exchange) CheckRequiredCredentials () {
+func (self *Exchange) CheckRequiredCredentials() {
 
 }
 
-func (self *Exchange) Urlencode (i interface{}) string {
+func (self *Exchange) Urlencode(i interface{}) string {
 	if m, ok := i.(map[string]interface{}); ok {
 		v := url.Values{}
 		for k, val := range m {
@@ -1568,7 +1655,7 @@ func (self *Exchange) Urlencode (i interface{}) string {
 	return ""
 }
 
-func (self *Exchange) Json (i interface{}) string {
+func (self *Exchange) Json(i interface{}) string {
 	ret, err := json.Marshal(i)
 	if err == nil {
 		return string(ret)
@@ -1576,14 +1663,14 @@ func (self *Exchange) Json (i interface{}) string {
 	return ""
 }
 
-func (self *Exchange) Encode (s interface{}) string {
+func (self *Exchange) Encode(s interface{}) string {
 	return s.(string)
 }
-func (self *Exchange) Decode (s interface{}) interface{}  {
+func (self *Exchange) Decode(s interface{}) interface{} {
 	return s
 }
 
-func (self* Exchange) AddTwoInterface (a interface{}, b interface{}) interface{} {
+func (self *Exchange) AddTwoInterface(a interface{}, b interface{}) interface{} {
 	if a == nil || b == nil {
 		return nil
 	}
@@ -1600,17 +1687,93 @@ func (self* Exchange) AddTwoInterface (a interface{}, b interface{}) interface{}
 	case float32:
 		return a.(float32) + b.(float32)
 	default:
-		 return nil
+		return nil
 	}
+}
+
+func (self *Exchange) FetchBalance(params map[string]interface{}) (*Account, error) {
+	return nil, fmt.Errorf("%s FetchBalance not supported yet", self.Id)
+}
+
+func (self *Exchange) CreateOrder(symbol string, otype string, side string, amount float64, price float64, params map[string]interface{}) (*Order, error) {
+	return nil, fmt.Errorf("%s CreateOrder not supported yet", self.Id)
+}
+
+func (self *Exchange) LimitBuy(symbol string, price, amount float64, params map[string]interface{}) (*Order, error) {
+	return self.Child.CreateOrder(symbol, "limit", "buy", amount, price, params)
+}
+
+func (self *Exchange) LimitSell(symbol string, price, amount float64, params map[string]interface{}) (*Order, error) {
+	return self.Child.CreateOrder(symbol, "limit", "sell", amount, price, params)
+}
+
+func (self *Exchange) CancelOrder(id string, symbol string, params map[string]interface{}) (interface{}, error) {
+	return nil, fmt.Errorf("%s CancelOrder not supported yet", self.Id)
+}
+
+func (self *Exchange) FetchOrder(id string, symbol string, params map[string]interface{}) (*Order, error) {
+	return nil, fmt.Errorf("%s FetchOrder not supported yet", self.Id)
+}
+
+func (self *Exchange) FetchOpenOrders(symbol string, since int64, limit int64, params map[string]interface{}) ([]*Order, error) {
+	return nil, fmt.Errorf("%s FetchOpenOrders not supported yet", self.Id)
+}
+
+func (self *Exchange) SetApiKey(s string) {
+	self.ApiKey = s
+}
+func (self *Exchange) SetSecret(s string) {
+	self.Secret = s
+}
+func (self *Exchange) SetPassword(s string) {
+	self.Password = s
+}
+func (self *Exchange) SetUid(s string) {
+	// TODO
+}
+
+func (self *Exchange) ParseOrders(orders interface{}, market interface{}, since int64, limit int64) []map[string]interface{} {
+	result := []map[string]interface{}{}
+	for _, order := range orders.([]interface{}) {
+		result = append(result, self.Child.ParseOrder(order, market))
+	}
+	return result
+}
+
+func (self *Exchange) ParseOrder(order interface{}, market interface{}) map[string]interface{} {
+	return order.(map[string]interface{})
+}
+
+func (self *Exchange) ToOrder(order interface{}) (result *Order, err error) {
+	result = &Order{}
+	return result.InitFromMap(order.(map[string]interface{}))
+}
+
+func (self *Exchange) ToOrders(orders interface{}) (result []*Order, err error) {
+	for _, o := range orders.([]map[string]interface{}) {
+		order, err := (&Order{}).InitFromMap(o)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, order)
+	}
+	return
+}
+
+// first character only, rest characters unchanged
+func (self *Exchange) Capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	b := []byte(s)
+	if b[0] >= 'a' && b[0] <= 'z' {
+		b[0] -= 32
+	}
+	return string(b)
 }
 
 func (self *Exchange) Nonce() int64 {
 	return self.Milliseconds()
-}
-
-
-func (self *Exchange) ParseOrders(orders interface{}, market interface{}, since interface{}, limit interface{}) interface{} {
-	return orders
 }
 
 func (self *Exchange) PrecisionFromString(s string) int {
