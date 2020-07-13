@@ -16,10 +16,13 @@ import (
 	"hash"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"reflect"
 	"regexp"
+	"syscall"
+
 	//"runtime/debug"
 	"sort"
 	"strconv"
@@ -114,7 +117,7 @@ type ExchangeInfo struct {
 	Origin                           string            `json:"origin"`
 	Limits                           Limits            `json:"limits"`
 	Precision                        Precision         `json:"precision"`
-	Exceptions                       Exceptions        `json:"exceptions"`
+	Exceptions                       map[string]interface{}
 	DontGetUsedBalanceFromStaleCache bool              `json:"dontGetUsedBalanceFromStaleCache"`
 }
 
@@ -140,13 +143,6 @@ type Urls struct {
 	Logo StringSlice `json:"logo"`
 	Doc  StringSlice `json:"doc"`
 	Fees StringSlice `json:"fees"`
-}
-
-// Exceptions takes exact/broad errors and classifies
-// them to general errors
-type Exceptions struct {
-	Exact Exception `json:"exact"`
-	Broad Exception `json:"broad"`
 }
 
 // Exception takes the string and applies the error method
@@ -335,11 +331,10 @@ type Order struct {
 //		o.Side, o.Amount, o.Symbol, o.Price, o.Filled)
 //}
 
-func (o *Order) InitFromMap(m map[string]interface{}) (result *Order, err error) {
+func (o *Order) InitFromMap(m map[string]interface{}) (result *Order) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("error order: %s: %v", fmt.Sprint(m), r)
-			//debug.PrintStack()
+			panic([]string{"InternalError", fmt.Sprintf("error order: %s: %v", m, r)})
 		}
 	}()
 
@@ -536,7 +531,7 @@ type ExchangeInterface interface {
 	// FetchMyTrades(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Trade, error)
 	FetchBalance(params map[string]interface{}) (*Account, error)
 	//FetchCurrencies() (map[string]*Currency, error)
-	FetchMarkets(params map[string]interface{}) (interface{}, error)
+	FetchMarkets(params map[string]interface{}) (interface{})
 
 	CreateOrder(symbol, otype, side string, amount float64, price float64, params map[string]interface{}) (*Order, error)
 	LimitBuy(symbol string, price, amount float64, params map[string]interface{}) (*Order, error)
@@ -545,7 +540,7 @@ type ExchangeInterface interface {
 
 	// Describe() []byte
 	//GetMarkets() map[string]*Market
-	SetMarkets([]*Market, map[string]*Currency) (map[string]*Market, error)
+	SetMarkets([]*Market, map[string]*Currency) (map[string]*Market)
 	//GetMarketsById() map[string]Market
 	//SetMarketsById(map[string]Market)
 	//GetCurrencies() map[string]Currency
@@ -555,7 +550,7 @@ type ExchangeInterface interface {
 	//SetSymbols([]string)
 	//SetIds([]string)
 	// GetOrders() []Order
-	LoadMarkets() (map[string]*Market, error)
+	LoadMarkets() (map[string]*Market)
 	// LoadMarkets(reload bool, params map[string]interface{}) (map[string]*Market, error)
 	// GetMarket(symbol string) (Market, error)
 	// CreateLimitBuyOrder(symbol string, amount float64, price *float64, params map[string]interface{}) (Order, error)
@@ -571,13 +566,14 @@ type ExchangeInterface interface {
 
 type ExchangeInterfaceInternal interface {
 	ExchangeInterface
-	Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (interface{}, error)
-	ApiFuncDecode(function string) (path string, api string, method string, err error)
-	ApiFunc(function string, params interface{}, headers map[string]interface{}, body interface{}) (response map[string]interface{}, err error)
-	Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response []byte, err error)
-	Request(path string, api string, method string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (response []byte, err error)
+	Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (interface{})
+	ApiFuncDecode(function string) (path string, api string, method string)
+	ApiFunc(function string, params interface{}, headers map[string]interface{}, body interface{}) (response map[string]interface{})
+	Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response map[string]interface{})
+	Request(path string, api string, method string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (response map[string]interface{})
 	Describe() []byte
 	ParseOrder(interface{}, interface{}) map[string]interface{}
+	HandleErrors (code int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}) ()
 }
 
 // Exchange struct
@@ -598,6 +594,7 @@ type Exchange struct {
 	ApiUrls       map[string]string
 	DescribeMap   map[string]interface{}
 	Options       map[string]interface{}
+	httpExceptions map[string]string
 }
 
 func (self *Exchange) Init(config *ExchangeConfig) (err error) {
@@ -616,6 +613,32 @@ func (self *Exchange) Init(config *ExchangeConfig) (err error) {
 		Timeout:   time.Second * 10, //超时时间
 	}
 
+	self.httpExceptions = map[string]string {
+		"422": "ExchangeError",
+		"418": "DDoSProtection",
+		"429": "RateLimitExceeded",
+		"404": "ExchangeNotAvailable",
+		"409": "ExchangeNotAvailable",
+		"410": "ExchangeNotAvailable",
+		"500": "ExchangeNotAvailable",
+		"501": "ExchangeNotAvailable",
+		"502": "ExchangeNotAvailable",
+		"520": "ExchangeNotAvailable",
+		"521": "ExchangeNotAvailable",
+		"522": "ExchangeNotAvailable",
+		"525": "ExchangeNotAvailable",
+		"526": "ExchangeNotAvailable",
+		"400": "ExchangeNotAvailable",
+		"403": "ExchangeNotAvailable",
+		"405": "ExchangeNotAvailable",
+		"503": "ExchangeNotAvailable",
+		"530": "ExchangeNotAvailable",
+		"408": "RequestTimeout",
+		"504": "RequestTimeout",
+		"401": "AuthenticationError",
+		"511": "AuthenticationError",
+	}
+
 	return
 }
 
@@ -623,22 +646,30 @@ func (self *Exchange) Describe() []byte {
 	return nil
 }
 
-func (self *Exchange) FetchMarkets(params map[string]interface{}) (interface{}, error) {
-	return nil, nil
+func (self *Exchange) FetchMarkets(params map[string]interface{}) (interface{}) {
+	return nil
 }
 func (self *Exchange) FetchOrderBook(symbol string, limit int64, params map[string]interface{}) (*OrderBook, error) {
 	return nil, errors.New("FetchOrderBook not supported yet")
 }
 
-func (self *Exchange) Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (interface{}, error) {
-	return nil, nil
+func (self *Exchange) Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (interface{}) {
+	return nil
 }
 
-func (self *Exchange) MarketId(symbol string) (string, error) {
-	return self.Markets[symbol].Id, nil
+func (self *Exchange) MarketId(symbol string) string {
+	if self.Markets == nil || len(self.Markets) == 0 {
+		self.RaiseException("InternalError", fmt.Sprintf("self.Markets not ready: %v", self.Markets))
+	}
+	if _, ok := self.Markets[symbol]; ok {
+		return self.Markets[symbol].Id
+	} else {
+		self.RaiseException("InternalError", fmt.Sprintf("symbol %v not int self.Markets:%v", symbol, self.Markets))
+	}
+	return ""
 }
 
-func (self *Exchange) SetMarkets(markets []*Market, currencies map[string]*Currency) (map[string]*Market, error) {
+func (self *Exchange) SetMarkets(markets []*Market, currencies map[string]*Currency) (map[string]*Market) {
 	symbols := make([]string, len(markets))
 	Ids := make([]string, len(markets))
 	marketsBySymbol := make(map[string]*Market, len(markets))
@@ -737,18 +768,14 @@ func (self *Exchange) SetMarkets(markets []*Market, currencies map[string]*Curre
 		currenciesById[currency.Id] = currency
 	}
 	self.CurrenciesById = currenciesById
-	return self.Markets, nil
+	return self.Markets
 }
 
 // func (self *Exchange) LoadMarkets(reload bool, params map[string]interface{}) (map[string]*Market, error) {
-func (self *Exchange) LoadMarkets() (map[string]*Market, error) {
+func (self *Exchange) LoadMarkets() (map[string]*Market) {
 	var currencies map[string]*Currency
 	if self.Markets == nil {
-		marketData, err := self.Child.FetchMarkets(nil)
-		if err != nil {
-			return nil, err
-		}
-
+		marketData := self.Child.FetchMarkets(nil)
 		var markets []*Market
 		if marketSliceData, ok := marketData.([]interface{}); ok {
 			for _, oneMarket := range marketSliceData {
@@ -763,7 +790,7 @@ func (self *Exchange) LoadMarkets() (map[string]*Market, error) {
 		}
 		return self.Child.SetMarkets(markets, currencies)
 	}
-	return self.Markets, nil
+	return self.Markets
 	/*
 		if !reload && self.Markets != nil {
 			if self.MarketsById == nil {
@@ -799,14 +826,8 @@ func (self *Exchange) Request(
 	params map[string]interface{},
 	headers map[string]interface{},
 	body interface{},
-) (response []byte, err error) {
-	signInfo, err := self.Child.Sign(path, api, method, params, headers, body)
-	if self.Verbose {
-		//fmt.Println("signinfo", signInfo)
-	}
-	if err != nil {
-		return
-	}
+) (response map[string]interface{}) {
+	signInfo := self.Child.Sign(path, api, method, params, headers, body)
 	return self.Child.Fetch(
 		self.Member(signInfo, "url").(string),
 		self.Member(signInfo, "method").(string),
@@ -815,17 +836,15 @@ func (self *Exchange) Request(
 	)
 }
 
-func (self *Exchange) PrepareRequestHeaders(req *http.Request, headers map[string]interface{}) error {
+func (self *Exchange) PrepareRequestHeaders(req *http.Request, headers map[string]interface{}) {
 	//req.Header.Set("Accept-Encoding", "gzip, deflate")
 
 	for k, v := range headers {
 		req.Header.Set(k, v.(string))
 	}
-
-	return nil
 }
 
-func (self *Exchange) Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response []byte, err error) {
+func (self *Exchange) Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response map[string]interface{}) {
 	var rbody []byte
 	if body != nil {
 		switch body.(type) {
@@ -834,20 +853,18 @@ func (self *Exchange) Fetch(url string, method string, headers map[string]interf
 		case []byte:
 			rbody = body.([]byte)
 		default:
-			err = fmt.Errorf("Invalid Argument body: %v", body)
+			self.RaiseException("InternalError", fmt.Sprintf("Invalid Argument body: %v", body))
 			return
 		}
 	}
 
 	req, err := http.NewRequest(method, url, bytes.NewReader(rbody))
 	if err != nil {
+		self.RaiseException("InternalError", fmt.Sprintf("NewRequest err: %v", err))
 		return
 	}
 
-	err = self.PrepareRequestHeaders(req, headers)
-	if err != nil {
-		return nil, err
-	}
+	self.PrepareRequestHeaders(req, headers)
 
 	if self.Verbose {
 		log.Println("Request:", method, url, headers, body)
@@ -855,21 +872,39 @@ func (self *Exchange) Fetch(url string, method string, headers map[string]interf
 
 	resp, err := self.Client.Do(req)
 	if err != nil {
-		return
+		if err, ok := err.(net.Error); ok && err.Timeout() {
+			fmt.Println(err.Error(), reflect.TypeOf(err))
+			self.RaiseException("RequestTimeout", fmt.Sprintf("%v %v %v", method, url, err))
+		}
+		switch t := err.(type) {
+		case syscall.Errno:
+			if t == syscall.ECONNREFUSED {
+				self.RaiseException("NetworkError", fmt.Sprintf("%v %v %v", method, url, err))
+			}
+		default:
+			self.RaiseException("ExchangeError", fmt.Sprintf("%v %v %v", method, url, err))
+		}
 	}
+
 	defer resp.Body.Close()
-	response, err = ioutil.ReadAll(resp.Body)
+
+	respRaw, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
+		self.RaiseException("InternalError", fmt.Sprintf("read response err: %v", err))
 		return
 	}
 
+	err = json.Unmarshal(respRaw, &response)
 	if self.Verbose {
-		log.Println("Response:", method, url, resp.StatusCode, resp.Header, string(response))
+		log.Println(fmt.Sprintf("Response: %v, %v, %v, %v, %v, %v", method, url, resp.StatusCode, resp.Header, respRaw, response))
 	}
 
+	strRawResp := string(respRaw)
+	self.Child.HandleErrors(int64(resp.StatusCode), resp.Status, url, method, resp.Header, strRawResp, response, headers, body)
 	if resp.StatusCode != 200 {
-		err = fmt.Errorf("%s %s %d %s %s", method, url, resp.StatusCode, http.StatusText(resp.StatusCode), string(response))
-		return
+		self.HandleRestErrors(resp.StatusCode, resp.Status, strRawResp, url, method)
+	} else {
+		self.HandleRestResponse(strRawResp, response, url, method)
 	}
 
 	return
@@ -919,31 +954,19 @@ func (self *Exchange) DefineRestApi() (err error) {
 	return
 }
 
-func (self *Exchange) ApiFuncDecode(function string) (path string, api string, method string, err error) {
+func (self *Exchange) ApiFuncDecode(function string) (path string, api string, method string) {
 	// fmt.Println(self.ApiDecodeInfo)
 	if info, ok := self.ApiDecodeInfo[function]; ok {
-		return info.Path, info.Api, info.Method, nil
+		return info.Path, info.Api, info.Method
+	} else {
+		self.RaiseException("InternalError", fmt.Sprintf("func %v not found!", function))
 	}
-	return "", "", "", errors.New("undefined function!")
+	return
 }
 
-func (self *Exchange) ApiFunc(function string, params interface{}, headers map[string]interface{}, body interface{}) (result map[string]interface{}, err error) {
-	path, api, method, err := self.Child.ApiFuncDecode(function)
-	if err != nil {
-		return
-	}
-
-	resp, err := self.Child.Request(path, api, method, params.(map[string]interface{}), headers, body)
-	if err != nil {
-		return
-	}
-
-	err = json.Unmarshal(resp, &result)
-	if self.Verbose {
-		fmt.Println(result)
-	}
-
-	return
+func (self *Exchange) ApiFunc(function string, params interface{}, headers map[string]interface{}, body interface{}) (result map[string]interface{}) {
+	path, api, method := self.Child.ApiFuncDecode(function)
+	return self.Child.Request(path, api, method, params.(map[string]interface{}), headers, body)
 }
 
 func (self *Exchange) Iso8601(milliseconds int64) string {
@@ -1188,9 +1211,9 @@ func ToFloat(x interface{}) (float64, error) {
 	return 0, nil
 }
 
-func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amountKey int64, out *[][2]float64) error {
+func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amountKey int64, out *[][2]float64) {
 	if len(bidsAsks) == 0 {
-		return nil
+		return
 	}
 
 	if _, ok := bidsAsks[0].([]interface{}); ok {
@@ -1211,8 +1234,6 @@ func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amou
 		if _, ok := bidsAsks[0].(map[int]interface{}); ok {
 		}
 	}
-
-	return nil
 }
 
 func (self *Exchange) Extend(maps ...interface{}) interface{} {
@@ -1313,33 +1334,28 @@ func NestedMapLookup(m map[string]interface{}, ks ...string) (rval interface{}, 
 	}
 }
 
-func (self *Exchange) ParseOrderBook(orderBook interface{}, timeStamp int64, bidsKey string, asksKey string, priceKey int64, amountKey int64) (*OrderBook, error) {
+func (self *Exchange) ParseOrderBook(orderBook interface{}, timeStamp int64, bidsKey string, asksKey string, priceKey int64, amountKey int64) *OrderBook {
 	var result OrderBook
 
 	if orderBookMap, ok := orderBook.(map[string]interface{}); ok {
 		if bids, ok := orderBookMap[bidsKey]; ok {
 			if bidsList, ok := bids.([]interface{}); ok {
-				err := self.ParseBidsAsks(bidsList, priceKey, amountKey, &result.Bids)
-				if err != nil {
-					SortSliceByIndex(result.Bids, 0, true)
-				}
+				self.ParseBidsAsks(bidsList, priceKey, amountKey, &result.Bids)
+				SortSliceByIndex(result.Bids, 0, true)
 			}
 		}
 		if asks, ok := orderBookMap[asksKey]; ok {
 			if asksList, ok := asks.([]interface{}); ok {
-				err := self.ParseBidsAsks(asksList, priceKey, amountKey, &result.Asks)
-				if err != nil {
-					SortSliceByIndex(result.Asks, 0, false)
-				}
+				self.ParseBidsAsks(asksList, priceKey, amountKey, &result.Asks)
+				SortSliceByIndex(result.Asks, 0, false)
 			}
 		}
 		result.Timestamp = timeStamp
 		// result.Datetime = time.Unix(timeStamp/1000, 0).Format("2006-01-02 15:04:05")
 
-		return &result, nil
+		return &result
 	}
-
-	return nil, nil
+	return nil
 }
 
 func (self *Exchange) SafeInteger(d interface{}, key string, defaultVal int64) (ret int64) {
@@ -1465,24 +1481,28 @@ func Hash(payload, algo, encoding string) (string, error) {
 }
 
 // HMAC encodes the payload based on the available hashing algo
-func (self *Exchange) Hmac(payload, key, algo, encoding string) (string, error) {
+func (self *Exchange) Hmac(payload, key, algo, encoding string) string {
 	if hashers[algo] == nil {
-		return "", fmt.Errorf("HMAC: unsupported hashing algo \"%s\"", algo)
+		self.RaiseException("InternalError", fmt.Sprintf("HMAC: unsupported hashing algo \"%s\"", algo))
 	}
 	h := hmac.New(hashers[algo], []byte(key))
 	_, err := h.Write([]byte(payload))
 	if err != nil {
-		return "", fmt.Errorf("hmac: %s", err)
+		self.RaiseException("InternalError", fmt.Sprintf("hmac: %s", err))
 	}
-	return string(encode(h.Sum(nil), encoding)), nil
+	return string(encode(h.Sum(nil), encoding))
 }
 
 // JWT creates a new signed token
-func JWT(claims map[string]interface{}, secret string) (string, error) {
+func JWT(claims map[string]interface{}, secret string) string {
 	var signer jwt.SigningMethod = jwt.SigningMethodHS256
 	token := jwt.New(signer)
 	token.Claims = jwt.MapClaims(claims)
-	return token.SignedString([]byte(secret))
+	result, err := token.SignedString([]byte(secret))
+	if err != nil {
+		panic([]string{"InternalError", fmt.Sprintf("JWT error: %v", err)})
+	}
+	return result
 }
 
 func encode(payload []byte, encoding string) []byte {
@@ -1618,20 +1638,31 @@ func (self *Exchange) IfThenElse(condition bool, a interface{}, b interface{}) i
 }
 
 func (self *Exchange) TestNil(x interface{}) bool {
-	switch x.(type) {
-	case string:
-		return x.(string) != ""
-	case int:
-		return x.(int) != 0
-	case int64:
-		return x.(int64) != 0
-	case float64:
-		return x.(float64) != 0.
-	case float32:
-		return x.(float32) != 0.
-	default:
+	/*
+	fmt.Println(xx(""))
+	fmt.Println(xx(0))
+	fmt.Println(xx(0.))
+	fmt.Println(xx(nil))
+	fmt.Println(xx((*int)(nil)))
+	fmt.Println(xx(map[string]string{}))
+	fmt.Println(xx([]string{}))
+	 */
+	if x == nil {
 		return true
 	}
+
+	switch reflect.TypeOf(x).Kind() {
+	case reflect.Map:
+		if reflect.ValueOf(x).Len() == 0 {
+			return true
+		}
+	case reflect.Slice:
+		if reflect.ValueOf(x).Len() == 0 {
+			return true
+		}
+	}
+
+	return reflect.ValueOf(x).IsZero()
 }
 
 func (self *Exchange) SetValue(x interface{}, k string, v interface{}) {
@@ -1715,6 +1746,9 @@ func (self *Exchange) FetchOrder(id string, symbol string, params map[string]int
 	return nil, fmt.Errorf("%s FetchOrder not supported yet", self.Id)
 }
 
+func (self *Exchange) HandleErrors (code int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}) () {
+}
+
 func (self *Exchange) FetchOpenOrders(symbol string, since int64, limit int64, params map[string]interface{}) ([]*Order, error) {
 	return nil, fmt.Errorf("%s FetchOpenOrders not supported yet", self.Id)
 }
@@ -1744,17 +1778,14 @@ func (self *Exchange) ParseOrder(order interface{}, market interface{}) map[stri
 	return order.(map[string]interface{})
 }
 
-func (self *Exchange) ToOrder(order interface{}) (result *Order, err error) {
+func (self *Exchange) ToOrder(order interface{}) (result *Order) {
 	result = &Order{}
 	return result.InitFromMap(order.(map[string]interface{}))
 }
 
-func (self *Exchange) ToOrders(orders interface{}) (result []*Order, err error) {
+func (self *Exchange) ToOrders(orders interface{}) (result []*Order) {
 	for _, o := range orders.([]map[string]interface{}) {
-		order, err := (&Order{}).InitFromMap(o)
-		if err != nil {
-			return nil, err
-		}
+		order := (&Order{}).InitFromMap(o)
 		result = append(result, order)
 	}
 	return
@@ -1785,4 +1816,92 @@ func (self *Exchange) PrecisionFromString(s string) int {
 	} else {
 		return 0
 	}
+}
+
+func (self *Exchange) RaiseException(errCls interface{}, msg interface{}) {
+	panic([]string{errCls.(string), msg.(string)})
+}
+
+func (self *Exchange) ThrowExactlyMatchedException(exact interface{}, s interface{}, message interface{}) {
+	if strMap, ok := exact.(map[string]interface{}); ok {
+		if val, ok := strMap[s.(string)]; ok {
+			self.RaiseException(val, message)
+		}
+	}
+}
+
+func (self *Exchange) FindBroadlyMatchedKey(broad interface{}, s interface{}) string {
+	for k, _ := range broad.(map[string]string) {
+		if strings.Contains(s.(string), k) {
+			return k
+		}
+	}
+	return ""
+}
+
+func (self *Exchange) ThrowBroadlyMatchedException(broad interface{}, s interface{}, message interface{}) {
+	broadKey := self.FindBroadlyMatchedKey(broad, s)
+	if broadKey != "" {
+		self.RaiseException(broad.(map[string]string)[broadKey], message)
+	}
+}
+
+func (self *Exchange) PanicToError (e interface{}) (err error) {
+	fmt.Println("panic: ", e)
+	switch e.(type) {
+	case []string:
+		 args := e.([]string)
+		 errCls := args[0]
+		 message := args[1]
+		 err = errors.New(errCls + "|" + message)
+	default:
+		 panic(e)
+	}
+	return
+}
+
+func (self *Exchange) HandleRestErrors(httpStatusCode int, httpStatusText string, body string, url string, method string) {
+	errCls := ""
+	strCode := strconv.Itoa(httpStatusCode)
+	if _, ok := self.httpExceptions[strCode]; ok {
+		errCls = self.httpExceptions[strCode]
+		if errCls == "ExchangeNotAvailable" {
+			matched, err := regexp.MatchString("(?i)(cloudflare|incapsula|overload|ddos)", body)
+			if matched && err == nil {
+				errCls = "DDoSProtection"
+			}
+		}
+	}
+	if errCls != "" {
+		self.RaiseException(errCls, strings.Join([]string{method, url, strCode, httpStatusText, body}, " "))
+	}
+}
+
+
+func (self *Exchange) IsJsonEncodedObject(input interface{}) bool {
+	strInput, ok := input.(string)
+	if ok {
+		if len(strInput) >= 2 {
+			if strInput[0] == '{' || strInput[1] == '[' {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (self *Exchange) HandleRestResponse(response string, jsonResponse interface{}, url string, method string) {
+	if self.IsJsonEncodedObject(response) && self.TestNil(jsonResponse) {
+		dDoSProtectionMatched, _ := regexp.MatchString("(?i)(cloudflare|incapsula|overload|ddos)", response)
+		exchangeNotAvailableMatched, _ := regexp.MatchString("(?i)(offline|busy|retry|wait|unavailable|maintain|maintenance|maintenancing)", response)
+		if dDoSProtectionMatched {
+			self.RaiseException("DDoSProtection", strings.Join([]string{method, url, response}, " "))
+		}
+		if exchangeNotAvailableMatched {
+			message := response + " exchange downtime, exchange closed for maintenance or offline, DDoS protection or rate-limiting in effect"
+			self.RaiseException("ExchangeNotAvailable", strings.Join([]string{method, url, response, message}, " "))
+		}
+		self.RaiseException("ExchangeError", strings.Join([]string{method, url, response}, " "))
+	}
+
 }

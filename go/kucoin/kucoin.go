@@ -2,7 +2,6 @@ package kucoin
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	. "github.com/georgexdz/ccxt/go/base"
 	"reflect"
@@ -52,6 +51,7 @@ func (self *Kucoin) InitDescribe() (err error) {
 
 	self.Options = self.DescribeMap["options"].(map[string]interface{})
 	self.Urls = self.DescribeMap["urls"].(map[string]interface{})
+	self.Exceptions = self.DescribeMap["exceptions"].(map[string]interface{})
 	return
 }
 
@@ -299,17 +299,10 @@ func (self *Kucoin) Describe() []byte {
 }`)
 }
 
-func (self *Kucoin) FetchMarkets(params map[string]interface{}) (ret interface{}, err error) {
-
-	response, err := self.ApiFunc("publicGetSymbols", params, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
+func (self *Kucoin) FetchMarkets(params map[string]interface{}) (ret interface{}) {
+	response := self.ApiFunc("publicGetSymbols", params, nil, nil)
 	data := self.Member(response, "data")
-
 	result := []interface{}{}
-
 	for i := 0; i < self.Length(data); i++ {
 		market := self.Member(data, i)
 		id := self.SafeString(market, "symbol", "")
@@ -353,22 +346,13 @@ func (self *Kucoin) FetchMarkets(params map[string]interface{}) (ret interface{}
 			"info":      market,
 		})
 	}
-
-	return result, nil
-
+	return result
 }
 
-func (self *Kucoin) FetchCurrencies(params map[string]interface{}) (ret interface{}, err error) {
-
-	response, err := self.ApiFunc("publicGetCurrencies", params, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
+func (self *Kucoin) FetchCurrencies(params map[string]interface{}) (ret interface{}) {
+	response := self.ApiFunc("publicGetCurrencies", params, nil, nil)
 	responseData := self.Member(response, "data")
-
 	result := map[string]interface{}{}
-
 	for i := 0; i < self.Length(responseData); i++ {
 		entry := self.Member(responseData, i)
 		id := self.SafeString(entry, "currency", "")
@@ -386,85 +370,56 @@ func (self *Kucoin) FetchCurrencies(params map[string]interface{}) (ret interfac
 			"limits":    self.Limits,
 		})
 	}
-
-	return result, nil
-
+	return result
 }
 
 func (self *Kucoin) FetchOrderBook(symbol string, limit int64, params map[string]interface{}) (orderBook *OrderBook, err error) {
-
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
 	level := self.SafeInteger(params, "level", 2)
-
 	levelLimit := fmt.Sprintf("%v", level)
-
 	if self.ToBool(levelLimit == "2") {
 		if self.ToBool(!self.TestNil(limit)) {
 			if self.ToBool(limit != 20 && limit != 100) {
-				err = errors.New(self.Id + " fetchOrderBook limit argument must be undefined, 20 or 100")
+				self.RaiseException("ExchangeError", self.Id + " fetchOrderBook limit argument must be undefined, 20 or 100")
 				return
 			}
 			levelLimit += "_" + fmt.Sprintf("%v", limit)
 		}
 	}
-
-	_, err = self.LoadMarkets()
-	if err != nil {
-		return
-	}
-
-	marketId, err := self.MarketId(symbol)
-	if err != nil {
-		return nil, err
-	}
-
+	self.LoadMarkets()
+	marketId := self.MarketId(symbol)
 	request := map[string]interface{}{
 		"symbol": marketId,
 		"level":  levelLimit,
 	}
-
-	response, err := self.ApiFunc("publicGetMarketOrderbookLevelLevel", self.Extend(request, params), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
+	response := self.ApiFunc("publicGetMarketOrderbookLevelLevel", self.Extend(request, params), nil, nil)
 	data := self.SafeValue(response, "data", map[string]interface{}{})
-
 	timestamp := self.SafeInteger(data, "time", 0)
-
-	orderbook, err := self.ParseOrderBook(data, timestamp, "bids", "asks", level-2, level-1)
-	if err != nil {
-		return nil, err
-	}
-
+	orderbook := self.ParseOrderBook(data, timestamp, "bids", "asks", level-2, level-1)
 	self.SetValue(orderbook, "nonce", self.SafeInteger(data, "sequence", 0))
-
 	return orderbook, nil
-
 }
 
 func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount float64, price float64, params map[string]interface{}) (result *Order, err error) {
-
-	_, err = self.LoadMarkets()
-	if err != nil {
-		return
-	}
-
-	marketId, err := self.MarketId(symbol)
-	if err != nil {
-		return nil, err
-	}
-
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	self.LoadMarkets()
+	marketId := self.MarketId(symbol)
 	clientOrderId := self.SafeString2(params, "clientOid", "clientOrderId", self.Uuid())
-
 	params = self.Omit(params, []interface{}{"clientOid", "clientOrderId"})
-
 	request := map[string]interface{}{
 		"clientOid": clientOrderId,
 		"side":      side,
 		"symbol":    marketId,
 		"type":      typ,
 	}
-
 	if self.ToBool(typ != "market") {
 		self.SetValue(request, "price", self.PriceToPrecision(symbol, price))
 		self.SetValue(request, "size", self.AmountToPrecision(symbol, amount))
@@ -475,16 +430,9 @@ func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount f
 			self.SetValue(request, "size", self.AmountToPrecision(symbol, amount))
 		}
 	}
-
-	response, err := self.ApiFunc("privatePostOrders", self.Extend(request, params), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
+	response := self.ApiFunc("privatePostOrders", self.Extend(request, params), nil, nil)
 	data := self.SafeValue(response, "data", map[string]interface{}{})
-
 	timestamp := self.Milliseconds()
-
 	order := map[string]interface{}{
 		"id":            self.SafeString(data, "orderId", ""),
 		"symbol":        symbol,
@@ -501,113 +449,78 @@ func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount f
 		"clientOrderId": clientOrderId,
 		"info":          data,
 	}
-
 	if self.ToBool(!self.ToBool(self.SafeValue(params, "quoteAmount", nil))) {
 		self.SetValue(order, "amount", amount)
 	}
-
-	return self.ToOrder(order)
-
+	return self.ToOrder(order), nil
 }
 
 func (self *Kucoin) CancelOrder(id string, symbol string, params map[string]interface{}) (response interface{}, err error) {
-
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
 	request := map[string]interface{}{
 		"orderId": id,
 	}
-
-	response, err = self.ApiFunc("privateDeleteOrdersOrderId", self.Extend(request, params), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
+	response = self.ApiFunc("privateDeleteOrdersOrderId", self.Extend(request, params), nil, nil)
 	return response, nil
-
 }
 
-func (self *Kucoin) FetchOrdersByStatus(status string, symbol string, since int64, limit int64, params map[string]interface{}) (orders interface{}, err error) {
-
-	_, err = self.LoadMarkets()
-	if err != nil {
-		return
-	}
-
+func (self *Kucoin) FetchOrdersByStatus(status string, symbol string, since int64, limit int64, params map[string]interface{}) (orders interface{}) {
+	self.LoadMarkets()
 	request := map[string]interface{}{
 		"status": status,
 	}
-
 	var market interface{}
-
 	if self.ToBool(!self.TestNil(symbol)) {
 		market = self.Market(symbol)
 		self.SetValue(request, "symbol", self.Member(market, "id"))
 	}
-
 	if self.ToBool(!self.TestNil(since)) {
 		self.SetValue(request, "startAt", since)
 	}
-
 	if self.ToBool(!self.TestNil(limit)) {
 		self.SetValue(request, "pageSize", limit)
 	}
-
-	response, err := self.ApiFunc("privateGetOrders", self.Extend(request, params), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
+	response := self.ApiFunc("privateGetOrders", self.Extend(request, params), nil, nil)
 	responseData := self.SafeValue(response, "data", map[string]interface{}{})
-
 	orders = self.SafeValue(responseData, "items", []interface{}{})
-
-	return self.ParseOrders(orders, market, since, limit), nil
-
+	return self.ParseOrders(orders, market, since, limit)
 }
 
 func (self *Kucoin) FetchOpenOrders(symbol string, since int64, limit int64, params map[string]interface{}) (result []*Order, err error) {
-
-	orders, err := self.FetchOrdersByStatus("active", symbol, since, limit, params)
-	if err != nil {
-		return
-	}
-	return self.ToOrders(orders)
-
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	return self.ToOrders(self.FetchOrdersByStatus("active", symbol, since, limit, params)), nil
 }
 
 func (self *Kucoin) FetchOrder(id string, symbol string, params map[string]interface{}) (result *Order, err error) {
-
-	_, err = self.LoadMarkets()
-	if err != nil {
-		return
-	}
-
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	self.LoadMarkets()
 	request := map[string]interface{}{
 		"orderId": id,
 	}
-
 	var market interface{}
-
 	if self.ToBool(!self.TestNil(symbol)) {
 		market = self.Market(symbol)
 	}
-
-	response, err := self.ApiFunc("privateGetOrdersOrderId", self.Extend(request, params), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
+	response := self.ApiFunc("privateGetOrdersOrderId", self.Extend(request, params), nil, nil)
 	responseData := self.Member(response, "data")
-
-	return self.ToOrder(self.ParseOrder(responseData, market))
-
+	return self.ToOrder(self.ParseOrder(responseData, market)), nil
 }
 
 func (self *Kucoin) ParseOrder(order interface{}, market interface{}) (result map[string]interface{}) {
-
 	var symbol interface{}
-
 	marketId := self.SafeString(order, "symbol", "")
-
 	if self.ToBool(!self.TestNil(marketId)) {
 		if self.ToBool(self.InMap(marketId, self.MarketsById)) {
 			market = self.Member(self.MarketsById, marketId)
@@ -620,48 +533,30 @@ func (self *Kucoin) ParseOrder(order interface{}, market interface{}) (result ma
 		}
 		market = self.SafeValue(self.MarketsById, marketId, nil)
 	}
-
 	if self.ToBool(self.TestNil(symbol)) {
 		if self.ToBool(!self.TestNil(market)) {
 			symbol = self.Member(market, "symbol")
 		}
 	}
-
 	orderId := self.SafeString(order, "id", "")
-
 	typ := self.SafeString(order, "type", "")
-
 	timestamp := self.SafeInteger(order, "createdAt", 0)
-
 	datetime := self.Iso8601(timestamp)
-
 	price := self.SafeFloat(order, "price", 0)
-
 	side := self.SafeString(order, "side", "")
-
 	feeCurrencyId := self.SafeString(order, "feeCurrency", "")
-
 	feeCurrency := self.SafeCurrencyCode(feeCurrencyId)
-
 	feeCost := self.SafeFloat(order, "fee", 0)
-
 	amount := self.SafeFloat(order, "size", 0)
-
 	filled := self.SafeFloat(order, "dealSize", 0)
-
 	cost := self.SafeFloat(order, "dealFunds", 0)
-
 	remaining := amount - filled
-
 	status := self.IfThenElse(self.ToBool(self.Member(order, "isActive")), "open", "closed")
-
 	status = self.IfThenElse(self.ToBool(self.Member(order, "cancelExist")), "canceled", status)
-
 	fee := map[string]interface{}{
 		"currency": feeCurrency,
 		"cost":     feeCost,
 	}
-
 	if self.ToBool(typ == "market") {
 		if self.ToBool(price == 0.0) {
 			if self.ToBool(!self.TestNil(cost) && !self.TestNil(filled)) {
@@ -671,9 +566,7 @@ func (self *Kucoin) ParseOrder(order interface{}, market interface{}) (result ma
 			}
 		}
 	}
-
 	clientOrderId := self.SafeString(order, "clientOid", "")
-
 	return map[string]interface{}{
 		"id":                 orderId,
 		"clientOrderId":      clientOrderId,
@@ -694,20 +587,17 @@ func (self *Kucoin) ParseOrder(order interface{}, market interface{}) (result ma
 		"average":            nil,
 		"trades":             nil,
 	}
-
 }
 
 func (self *Kucoin) FetchBalance(params map[string]interface{}) (balanceResult *Account, err error) {
-
-	_, err = self.LoadMarkets()
-	if err != nil {
-		return
-	}
-
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	self.LoadMarkets()
 	var typ interface{}
-
 	request := map[string]interface{}{}
-
 	if self.ToBool(self.InMap("type", params)) {
 		typ = self.Member(params, "type")
 		if self.ToBool(!self.TestNil(typ)) {
@@ -718,18 +608,11 @@ func (self *Kucoin) FetchBalance(params map[string]interface{}) (balanceResult *
 		options := self.SafeValue(self.Options, "fetchBalance", map[string]interface{}{})
 		typ = self.SafeString(options, "type", "trade")
 	}
-
-	response, err := self.ApiFunc("privateGetAccounts", self.Extend(request, params), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
+	response := self.ApiFunc("privateGetAccounts", self.Extend(request, params), nil, nil)
 	data := self.SafeValue(response, "data", []interface{}{})
-
 	result := map[string]interface{}{
 		"info": response,
 	}
-
 	for i := 0; i < self.Length(data); i++ {
 		balance := self.Member(data, i)
 		balanceType := self.SafeString(balance, "type", "")
@@ -743,33 +626,20 @@ func (self *Kucoin) FetchBalance(params map[string]interface{}) (balanceResult *
 			self.SetValue(result, code, account)
 		}
 	}
-
 	return self.ParseBalance(result), nil
-
 }
 
-func (self *Kucoin) Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (ret interface{}, err error) {
-
+func (self *Kucoin) Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (ret interface{}) {
 	versions := self.SafeValue(self.Options, "versions", map[string]interface{}{})
-
 	apiVersions := self.SafeValue(versions, api, nil)
-
 	methodVersions := self.SafeValue(apiVersions, method, map[string]interface{}{})
-
 	defaultVersion := self.SafeString(methodVersions, path, self.Member(self.Options, "version"))
-
 	version := self.SafeString(params, "version", defaultVersion)
-
 	params = self.Omit(params, "version")
-
 	endpoint := "/api/" + version + "/" + self.ImplodeParams(path, params)
-
 	query := self.Omit(params, self.ExtractParams(path))
-
 	endpart := ""
-
 	headers = self.IfThenElse(self.ToBool(!self.TestNil(headers)), headers, map[string]interface{}{})
-
 	if self.ToBool(self.Length(reflect.ValueOf(query).MapKeys())) {
 		if self.ToBool(method != "GET") {
 			endpart = self.Json(query)
@@ -778,9 +648,7 @@ func (self *Kucoin) Sign(path string, api string, method string, params map[stri
 			endpoint += "?" + self.Urlencode(query)
 		}
 	}
-
 	url := fmt.Sprintf("%v", self.Member(self.Member(self.Urls, "api"), api)) + endpoint
-
 	if self.ToBool(api == "private") {
 		self.CheckRequiredCredentials()
 		timestamp := fmt.Sprintf("%v", self.Nonce())
@@ -790,18 +658,24 @@ func (self *Kucoin) Sign(path string, api string, method string, params map[stri
 			"KC-API-PASSPHRASE": self.Password,
 		}, headers)
 		payload := timestamp + method + endpoint + endpart
-		signature, err := self.Hmac(self.Encode(payload), self.Encode(self.Secret), "sha256", "base64")
-		if err != nil {
-			return nil, err
-		}
+		signature := self.Hmac(self.Encode(payload), self.Encode(self.Secret), "sha256", "base64")
 		self.SetValue(headers, "KC-API-SIGN", self.Decode(signature))
 	}
-
 	return map[string]interface{}{
 		"url":     url,
 		"method":  method,
 		"body":    endpart,
 		"headers": headers,
-	}, nil
+	}
+}
 
+func (self *Kucoin) HandleErrors(code int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}) {
+	if self.ToBool(!self.ToBool(response)) {
+		self.ThrowBroadlyMatchedException(self.Member(self.Exceptions, "broad"), body, body)
+		return
+	}
+	errorCode := self.SafeString(response, "code", "")
+	message := self.SafeString(response, "msg", "")
+	self.ThrowExactlyMatchedException(self.Member(self.Exceptions, "exact"), message, message)
+	self.ThrowExactlyMatchedException(self.Member(self.Exceptions, "exact"), errorCode, message)
 }

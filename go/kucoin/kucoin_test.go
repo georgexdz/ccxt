@@ -38,18 +38,16 @@ func get_test_config(ex *Kucoin) {
 }
 
 func TestFetchOrderBook(t *testing.T) {
-	ex, _ := New(nil)
-	fmt.Println(ex.ApiDecodeInfo)
+	ex, err := New(nil)
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+
+	fmt.Println(ex.Exceptions)
 	ex.Verbose = true
 
 	get_test_config(ex)
-
-	markets, err := ex.LoadMarkets()
-	if err != nil {
-		t.Fatal(err)
-		return
-	}
-	fmt.Println("markets:", markets)
 
 	orderbook, err := ex.FetchOrderBook("BTC/USDT", 20, nil)
 	if err != nil {
@@ -58,6 +56,9 @@ func TestFetchOrderBook(t *testing.T) {
 	}
 	fmt.Println("orderbook:", orderbook)
 
+	markets := ex.LoadMarkets()
+	fmt.Println("markets:", markets)
+
 	ex.FetchBalance(nil)
 
 	order, err := ex.CreateOrder("ETH/BTC", "limit", "buy", 0.0001, 0.024, nil)
@@ -65,7 +66,7 @@ func TestFetchOrderBook(t *testing.T) {
 		return
 	}
 
-	fmt.Println(ex.FetchOrder(order["id"].(string), "ETH/BTC", nil))
+	fmt.Println(ex.FetchOrder(order.Id, "ETH/BTC", nil))
 
 	openOrders, err := ex.FetchOpenOrders("ETH/BTC", 0, 20, nil)
 	if err == nil {
@@ -73,7 +74,7 @@ func TestFetchOrderBook(t *testing.T) {
 	}
 
 	if err == nil {
-		res, err := ex.CancelOrder(order["id"].(string), "ETH/BTC", nil)
+		res, err := ex.CancelOrder(order.Id, "ETH/BTC", nil)
 		fmt.Println(res, err)
 	}
 }

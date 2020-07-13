@@ -18,7 +18,7 @@ def get_ex_list():
         'huobipro',
         'okex',
         'bitmax',
-        'binance'
+        # 'binance'
     ]
 
 
@@ -55,7 +55,7 @@ FUNC_LIST = [
     'sign', 'fetchOrderBook', 'fetchOpenOrders', 'cancelOrder',
     'createOrder', 'fetchOrder', 'parseOrder', 'fetchBalance',
     'fetchOrdersByStatus', 'fetchOrdersByState', 'fetchMarkets',
-    'fetchCurrencies',
+    'fetchCurrencies', 'handleErrors'
 ]
 JS_PATCH_FOR_GOLAGNG_TRANSLATE = {
     'kucoin': {
@@ -100,10 +100,18 @@ def format_describe_func(desc):
 	}}
 	'''
 
+def split_func_list(str_code):
+    res = str_code.split('\n\n')
+    if res:
+        tmp = res[-1]
+        res[-1] = tmp.replace('};', '')
+    return res
+
+
 def read_func(str_code):
     result = {}
 
-    for block in str_code.split('\n\n'):
+    for block in split_func_list(str_code):
         for func in FUNC_LIST:
             if f'{func} ' in block.split('\n')[0]:
                 result[func] = format_js_code_for_espima_analysis(func, block)
@@ -137,27 +145,33 @@ FUNC_ARG_MAP = {
     'parseOrders': 'status string, symbol string, since int64, limit int64, params map[string]interface{}',
     'fetchMarkets': 'params map[string]interface{}',
     'fetchCurrencies': 'params map[string]interface{}',
+    'handleErrors': 'code int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}',
 }
 RETURN_MAP = {
-    'createOrder': 'order map[string]interface{}, err error',
+    'createOrder': 'result *Order, err error',
     'fetchBalance': 'balanceResult *Account, err error',
     'cancelOrder': 'response interface{}, err error',
-    'fetchOrdersByStatus': 'orders interface{}, err error',
-    'fetchOrdersByState': 'orders interface{}, err error',
-    'fetchOpenOrders': 'orders interface{}, err error',
-    'fetchOrderBook': 'orderBook interface{}, err error',
-    'fetchOrder': 'order interface{}, err error',
-    'sign': 'ret interface{}, err error',
-    'parseOrder': 'result interface{}',
-    'fetchMarkets': 'ret interface{}, err error',
-    'fetchCurrencies': 'ret interface{}, err error',
+    'fetchOrdersByStatus': 'orders interface{}',
+    'fetchOrdersByState': 'orders interface{}',
+    'fetchOpenOrders': 'result []*Order, err error',
+    'fetchOrderBook': 'orderBook *OrderBook, err error',
+    'fetchOrder': 'result *Order, err error',
+    'sign': 'ret interface{}',
+    'parseOrder': 'result map[string]interface{}',
+    'fetchMarkets': 'ret interface{}',
+    'fetchCurrencies': 'ret interface{}',
+    'handleErrors': '',
 }
+PANIC_DEAL_FUNC = [o.lower() for o in [
+    'fetchOrderBook', 'fetchOpenOrders', 'cancelOrder',
+    'createOrder', 'fetchOrder', 'fetchBalance',
+]]
 NIL_MAP = {
     'string': '""',
     'int64': '0',
     'error': 'nil'
 }
-ERROR_RETURN_FUNCS = [o.lower() for o in ['LoadMarkets', 'HMAC', 'JWT', 'ParseOrderBook', 'ParseBidsAsks', 'TOFloat', 'ApiFunc', 'MarketId']]
+ERROR_RETURN_FUNCS = [o.lower() for o in []]
 SIDE = None
 
 
@@ -239,7 +253,6 @@ def CallExpression(syntax, info={}):
 
     call_str = pre_part
     if re.findall(r'self\.(Private|Public)', call_str):
-        info['error_check'] = True
         info1 = DEFAULT_FUNC_ARGS['apifunc']
         arg_str += f', {info1[1]}' * (info1[0] - len(syntax.arguments) - 1)
         return f'self.ApiFunc("{syntax.callee.property.name}", {arg_str})'
@@ -360,7 +373,7 @@ def AssignmentExpression(syntax, info={}):
 
 def BlockStatement(syntax, info={}):
     lines = '\n'.join([call_func_by_syntax(block) for block in syntax.body])
-    return f'{{\n{lines}\n}}'
+    return f'{{{lines}}}'
 
 
 def IfStatement(syntax, info={}):
@@ -391,6 +404,9 @@ def UnaryExpression(syntax, info={}):
 
 
 def ReturnStatement(syntax, info={}):
+    if not syntax.argument:
+        return f'return'
+
     if info.get('return') and ',' in info['return']:
         return f'return {call_func_by_syntax(syntax.argument)}, nil'
     else:
@@ -427,7 +443,7 @@ FUNC_LINES = 99
 ARG_TYPE = dict()
 RET_TYPE = dict()
 def FunctionDeclaration(syntax, info={}):
-    result_code = ''
+    result_code = []
     func_name = syntax.id.name
 
     global ARG_TYPE, RET_TYPE
@@ -437,16 +453,30 @@ def FunctionDeclaration(syntax, info={}):
     ARG_TYPE = dict(a)
     func_ret_str = get_return(func_name)
     a = [tuple(pair.split(' ')) for pair in func_ret_str.split(', ')]
-    RET_TYPE = dict(a)
+    try:
+        RET_TYPE = dict(a)
+    except:
+        RET_TYPE = {}
 
     if syntax.body.type == 'BlockStatement':
         for idx, block in enumerate(syntax.body.body):
-            result_code += '\n' + call_func_by_syntax(block, {'return': func_ret_str}) + '\n'
+            result_code.append(call_func_by_syntax(block, {'return': func_ret_str}))
             if idx == FUNC_LINES:
                 break
 
+    str_result_code = '\n'.join(result_code)
+
+    panic_deal = ''
+    if func_name.lower() in PANIC_DEAL_FUNC:
+        panic_deal = '''defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+        '''
+
     return f'''func (self *{EX_NAME}) {capital_first(func_name)} ({func_arg_str}) ({func_ret_str}) {{
-    {result_code}
+    {panic_deal}{str_result_code}
 }}
     '''
 
@@ -533,7 +563,6 @@ def format_funcs(func_info_map):
             ret += parse_by_syntax(code) + '\n'
             # print(format_describe_func(info['describe']))
         except Exception as e:
-            print(ex)
             print(code)
             print(traceback.format_exc())
 
@@ -640,7 +669,7 @@ func TestFetchOrderBook(t *testing.T) {{
 //}}'''
 
 def write_ex_file(ex, code):
-    des_dir = os.path.join('..', 'go', f'{ex.lower()}')
+    des_dir = os.path.join('..', 'go', 'generated', f'{ex.lower()}')
     if not os.path.exists(des_dir):
         os.makedirs(des_dir)
     with open(os.path.join(des_dir, f'{ex.lower()}.go'), 'w') as f:
