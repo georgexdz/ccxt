@@ -873,7 +873,6 @@ func (self *Exchange) Fetch(url string, method string, headers map[string]interf
 	resp, err := self.Client.Do(req)
 	if err != nil {
 		if err, ok := err.(net.Error); ok && err.Timeout() {
-			fmt.Println(err.Error(), reflect.TypeOf(err))
 			self.RaiseException("RequestTimeout", fmt.Sprintf("%v %v %v", method, url, err))
 		}
 		switch t := err.(type) {
@@ -1270,29 +1269,8 @@ func (self *Exchange) ToBool(v interface{}) bool {
 		case bool:
 			vv := v.(bool)
 			return vv
-		case string:
-			v = v.(string)
-			if v == "" {
-				return false
-			} else {
-				return true
-			}
-		case int64:
-			v = v.(int64)
-			if v == 0 {
-				return false
-			} else {
-				return true
-			}
-		case int:
-			v = v.(int)
-			if v == 0 {
-				return false
-			} else {
-				return true
-			}
 		default:
-			return true
+			return !self.TestNil(v)
 		}
 	} else {
 		return false
@@ -1831,7 +1809,7 @@ func (self *Exchange) ThrowExactlyMatchedException(exact interface{}, s interfac
 }
 
 func (self *Exchange) FindBroadlyMatchedKey(broad interface{}, s interface{}) string {
-	for k, _ := range broad.(map[string]string) {
+	for k, _ := range broad.(map[string]interface{}) {
 		if strings.Contains(s.(string), k) {
 			return k
 		}
@@ -1882,7 +1860,7 @@ func (self *Exchange) IsJsonEncodedObject(input interface{}) bool {
 	strInput, ok := input.(string)
 	if ok {
 		if len(strInput) >= 2 {
-			if strInput[0] == '{' || strInput[1] == '[' {
+			if strInput[0] == '{' || strInput[0] == '[' {
 				return true
 			}
 		}
