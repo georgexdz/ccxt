@@ -384,7 +384,7 @@ type OrderBook struct {
 	Bids      [][2]float64
 	Timestamp int64
 	Datetime  string
-	Nonce     string
+	Nonce     int64
 }
 
 // BookEntry struct
