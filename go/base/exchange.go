@@ -118,7 +118,7 @@ type ExchangeInfo struct {
 	Limits                           Limits            `json:"limits"`
 	Precision                        Precision         `json:"precision"`
 	Exceptions                       map[string]interface{}
-	DontGetUsedBalanceFromStaleCache bool              `json:"dontGetUsedBalanceFromStaleCache"`
+	DontGetUsedBalanceFromStaleCache bool `json:"dontGetUsedBalanceFromStaleCache"`
 }
 
 // Apis public and private methods
@@ -527,7 +527,7 @@ type ExchangeInterface interface {
 	// FetchMyTrades(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Trade, error)
 	FetchBalance(params map[string]interface{}) (*Account, error)
 	//FetchCurrencies() (map[string]*Currency, error)
-	FetchMarkets(params map[string]interface{}) (interface{})
+	FetchMarkets(params map[string]interface{}) interface{}
 
 	CreateOrder(symbol, otype, side string, amount float64, price float64, params map[string]interface{}) (*Order, error)
 	LimitBuy(symbol string, price, amount float64, params map[string]interface{}) (*Order, error)
@@ -536,7 +536,7 @@ type ExchangeInterface interface {
 
 	// Describe() []byte
 	//GetMarkets() map[string]*Market
-	SetMarkets([]*Market, map[string]*Currency) (map[string]*Market)
+	SetMarkets([]*Market, map[string]*Currency) map[string]*Market
 	//GetMarketsById() map[string]Market
 	//SetMarketsById(map[string]Market)
 	//GetCurrencies() map[string]Currency
@@ -546,7 +546,7 @@ type ExchangeInterface interface {
 	//SetSymbols([]string)
 	//SetIds([]string)
 	// GetOrders() []Order
-	LoadMarkets() (map[string]*Market)
+	LoadMarkets() map[string]*Market
 	// LoadMarkets(reload bool, params map[string]interface{}) (map[string]*Market, error)
 	// GetMarket(symbol string) (Market, error)
 	// CreateLimitBuyOrder(symbol string, amount float64, price *float64, params map[string]interface{}) (Order, error)
@@ -562,14 +562,14 @@ type ExchangeInterface interface {
 
 type ExchangeInterfaceInternal interface {
 	ExchangeInterface
-	Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (interface{})
+	Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) interface{}
 	ApiFuncDecode(function string) (path string, api string, method string)
 	ApiFunc(function string, params interface{}, headers map[string]interface{}, body interface{}) (response map[string]interface{})
 	Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response map[string]interface{})
 	Request(path string, api string, method string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (response map[string]interface{})
 	Describe() []byte
 	ParseOrder(interface{}, interface{}) map[string]interface{}
-	HandleErrors (code int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}) ()
+	HandleErrors(code int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{})
 }
 
 // Exchange struct
@@ -585,11 +585,11 @@ type Exchange struct {
 	Currencies     map[string]*Currency
 	CurrenciesById map[string]*Currency
 
-	Child         ExchangeInterfaceInternal
-	ApiDecodeInfo map[string]*ApiDecode
-	ApiUrls       map[string]string
-	DescribeMap   map[string]interface{}
-	Options       map[string]interface{}
+	Child          ExchangeInterfaceInternal
+	ApiDecodeInfo  map[string]*ApiDecode
+	ApiUrls        map[string]string
+	DescribeMap    map[string]interface{}
+	Options        map[string]interface{}
 	httpExceptions map[string]string
 }
 
@@ -609,7 +609,7 @@ func (self *Exchange) Init(config *ExchangeConfig) (err error) {
 		Timeout:   time.Second * 10, //超时时间
 	}
 
-	self.httpExceptions = map[string]string {
+	self.httpExceptions = map[string]string{
 		"422": "ExchangeError",
 		"418": "DDoSProtection",
 		"429": "RateLimitExceeded",
@@ -642,14 +642,14 @@ func (self *Exchange) Describe() []byte {
 	return nil
 }
 
-func (self *Exchange) FetchMarkets(params map[string]interface{}) (interface{}) {
+func (self *Exchange) FetchMarkets(params map[string]interface{}) interface{} {
 	return nil
 }
 func (self *Exchange) FetchOrderBook(symbol string, limit int64, params map[string]interface{}) (*OrderBook, error) {
 	return nil, errors.New("FetchOrderBook not supported yet")
 }
 
-func (self *Exchange) Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (interface{}) {
+func (self *Exchange) Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) interface{} {
 	return nil
 }
 
@@ -665,7 +665,7 @@ func (self *Exchange) MarketId(symbol string) string {
 	return ""
 }
 
-func (self *Exchange) SetMarkets(markets []*Market, currencies map[string]*Currency) (map[string]*Market) {
+func (self *Exchange) SetMarkets(markets []*Market, currencies map[string]*Currency) map[string]*Market {
 	symbols := make([]string, len(markets))
 	Ids := make([]string, len(markets))
 	marketsBySymbol := make(map[string]*Market, len(markets))
@@ -768,7 +768,7 @@ func (self *Exchange) SetMarkets(markets []*Market, currencies map[string]*Curre
 }
 
 // func (self *Exchange) LoadMarkets(reload bool, params map[string]interface{}) (map[string]*Market, error) {
-func (self *Exchange) LoadMarkets() (map[string]*Market) {
+func (self *Exchange) LoadMarkets() map[string]*Market {
 	var currencies map[string]*Currency
 	if self.Markets == nil {
 		marketData := self.Child.FetchMarkets(nil)
@@ -1702,7 +1702,7 @@ func (self *Exchange) FetchOrder(id string, symbol string, params map[string]int
 	return nil, fmt.Errorf("%s FetchOrder not supported yet", self.Id)
 }
 
-func (self *Exchange) HandleErrors (code int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}) () {
+func (self *Exchange) HandleErrors(code int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}) {
 }
 
 func (self *Exchange) FetchOpenOrders(symbol string, since int64, limit int64, params map[string]interface{}) ([]*Order, error) {
@@ -1806,7 +1806,7 @@ func (self *Exchange) ThrowBroadlyMatchedException(broad interface{}, s interfac
 	}
 }
 
-func (self *Exchange) PanicToError (e interface{}) (err error) {
+func (self *Exchange) PanicToError(e interface{}) (err error) {
 	//fmt.Println("panic: ", e)
 	switch e.(type) {
 	case []string:
@@ -1814,7 +1814,7 @@ func (self *Exchange) PanicToError (e interface{}) (err error) {
 		if len(args) == 2 {
 			errCls := args[0]
 			message := args[1]
-			err = errors.New(errCls + ":" + message)
+			err = errors.New(errCls + ": " + message)
 		} else {
 			err = fmt.Errorf("Catch unknown panic: %v", e)
 		}
@@ -1840,7 +1840,6 @@ func (self *Exchange) HandleRestErrors(httpStatusCode int, httpStatusText string
 		self.RaiseException(errCls, strings.Join([]string{method, url, strCode, httpStatusText, body}, " "))
 	}
 }
-
 
 func (self *Exchange) IsJsonEncodedObject(input interface{}) bool {
 	strInput, ok := input.(string)
