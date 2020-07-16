@@ -405,7 +405,7 @@ func (self *Kucoin) FetchOrderBook(symbol string, limit int64, params map[string
 	return orderbook, nil
 }
 
-func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount float64, price float64, params map[string]interface{}) (result *Order, err error) {
+func (self *Kucoin) CreateOrder(symbol string, _type string, side string, amount float64, price float64, params map[string]interface{}) (result *Order, err error) {
 	defer func() {
 		if e := recover(); e != nil {
 			err = self.PanicToError(e)
@@ -419,16 +419,16 @@ func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount f
 		"clientOid": clientOrderId,
 		"side":      side,
 		"symbol":    marketId,
-		"type":      typ,
+		"type":      _type,
 	}
-	if self.ToBool(typ != "market") {
-		self.SetValue(request, "price", self.PriceToPrecision(symbol, price))
-		self.SetValue(request, "size", self.AmountToPrecision(symbol, amount))
+	if _type != "market" {
+		self.SetValue(request, "price", self.Float64ToString(price))
+		self.SetValue(request, "size", self.Float64ToString(amount))
 	} else {
-		if self.ToBool(self.SafeValue(params, "quoteAmount", nil)) {
-			self.SetValue(request, "funds", self.AmountToPrecision(symbol, amount))
+		if params["quoteAmount"] != nil {
+			self.SetValue(request, "funds", self.Float64ToString(amount))
 		} else {
-			self.SetValue(request, "size", self.AmountToPrecision(symbol, amount))
+			self.SetValue(request, "size", self.Float64ToString(amount))
 		}
 	}
 	response := self.ApiFunc("privatePostOrders", self.Extend(request, params), nil, nil)
@@ -437,7 +437,7 @@ func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount f
 	order := map[string]interface{}{
 		"id":            self.SafeString(data, "orderId", ""),
 		"symbol":        symbol,
-		"type":          typ,
+		"type":          _type,
 		"side":          side,
 		"price":         price,
 		"cost":          nil,
@@ -450,8 +450,8 @@ func (self *Kucoin) CreateOrder(symbol string, typ string, side string, amount f
 		"clientOrderId": clientOrderId,
 		"info":          data,
 	}
-	if self.ToBool(!self.ToBool(self.SafeValue(params, "quoteAmount", nil))) {
-		self.SetValue(order, "amount", amount)
+	if params["quoteAmount"] == nil {
+		order["amount"] = amount
 	}
 	return self.ToOrder(order), nil
 }
@@ -540,7 +540,7 @@ func (self *Kucoin) ParseOrder(order interface{}, market interface{}) (result ma
 		}
 	}
 	orderId := self.SafeString(order, "id", "")
-	typ := self.SafeString(order, "type", "")
+	_type := self.SafeString(order, "type", "")
 	timestamp := self.SafeInteger(order, "createdAt", 0)
 	datetime := self.Iso8601(timestamp)
 	price := self.SafeFloat(order, "price", 0)
@@ -558,7 +558,7 @@ func (self *Kucoin) ParseOrder(order interface{}, market interface{}) (result ma
 		"currency": feeCurrency,
 		"cost":     feeCost,
 	}
-	if self.ToBool(typ == "market") {
+	if self.ToBool(_type == "market") {
 		if self.ToBool(price == 0.0) {
 			if self.ToBool(!self.TestNil(cost) && !self.TestNil(filled)) {
 				if self.ToBool(cost > 0 && filled > 0) {
@@ -572,7 +572,7 @@ func (self *Kucoin) ParseOrder(order interface{}, market interface{}) (result ma
 		"id":                 orderId,
 		"clientOrderId":      clientOrderId,
 		"symbol":             symbol,
-		"type":               typ,
+		"type":               _type,
 		"side":               side,
 		"amount":             amount,
 		"price":              price,
@@ -597,17 +597,17 @@ func (self *Kucoin) FetchBalance(params map[string]interface{}) (balanceResult *
 		}
 	}()
 	self.LoadMarkets()
-	var typ interface{}
+	var _type interface{}
 	request := map[string]interface{}{}
 	if self.ToBool(self.InMap("type", params)) {
-		typ = self.Member(params, "type")
-		if self.ToBool(!self.TestNil(typ)) {
-			self.SetValue(request, "type", typ)
+		_type = self.Member(params, "type")
+		if self.ToBool(!self.TestNil(_type)) {
+			self.SetValue(request, "type", _type)
 		}
 		params = self.Omit(params, "type")
 	} else {
 		options := self.SafeValue(self.Options, "fetchBalance", map[string]interface{}{})
-		typ = self.SafeString(options, "type", "trade")
+		_type = self.SafeString(options, "type", "trade")
 	}
 	response := self.ApiFunc("privateGetAccounts", self.Extend(request, params), nil, nil)
 	data := self.SafeValue(response, "data", []interface{}{})
@@ -617,7 +617,7 @@ func (self *Kucoin) FetchBalance(params map[string]interface{}) (balanceResult *
 	for i := 0; i < self.Length(data); i++ {
 		balance := self.Member(data, i)
 		balanceType := self.SafeString(balance, "type", "")
-		if self.ToBool(balanceType == typ) {
+		if self.ToBool(balanceType == _type) {
 			currencyId := self.SafeString(balance, "currency", "")
 			code := self.SafeCurrencyCode(currencyId)
 			account := self.Account()

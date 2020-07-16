@@ -970,7 +970,7 @@ func (self *Exchange) Iso8601(milliseconds int64) string {
 }
 
 func (self *Exchange) Milliseconds() int64 {
-	return time.Now().Unix() * 1000
+	return time.Now().UnixNano() / 1000000
 }
 
 /*
@@ -1868,4 +1868,8 @@ func (self *Exchange) HandleRestResponse(response string, jsonResponse interface
 		}
 		self.RaiseException("ExchangeError", strings.Join([]string{method, url, response}, " "))
 	}
+}
+
+func (self *Exchange) Float64ToString(f float64) string {
+	return fmt.Sprintf("%v", f)
 }
