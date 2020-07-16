@@ -1323,7 +1323,9 @@ func (self *Exchange) ParseOrderBook(orderBook interface{}, timeStamp int64, bid
 func (self *Exchange) SafeInteger(d interface{}, key string, defaultVal int64) (ret int64) {
 	if d, ok := d.(map[string]interface{}); ok {
 		if val, ok := d[key]; ok {
-			if intVal, ok := val.(int64); ok {
+			if intVal, ok := val.(int); ok {
+				return int64(intVal)
+			} else if intVal, ok := val.(int64); ok {
 				return intVal
 			} else if val, ok := val.(float64); ok {
 				return int64(val)
