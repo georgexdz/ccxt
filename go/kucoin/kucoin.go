@@ -380,12 +380,13 @@ func (self *Kucoin) FetchOrderBook(symbol string, limit int64, params map[string
 		}
 	}()
 	level := self.SafeInteger(params, "level", 2)
-	levelLimit := fmt.Sprintf("%v", level)
-	if self.ToBool(levelLimit == "2") {
-		if self.ToBool(!self.TestNil(limit)) {
-			if self.ToBool(limit != 20 && limit != 100) {
-				self.RaiseException("ExchangeError", self.Id + " fetchOrderBook limit argument must be undefined, 20 or 100")
-				return
+	levelLimit := fmt.Sprintf("%d", level)
+	if levelLimit == "2" {
+		if limit > 0 {
+			if limit <= 20 {
+				limit = 20
+			} else {
+				limit = 100
 			}
 			levelLimit += "_" + fmt.Sprintf("%v", limit)
 		}
@@ -400,7 +401,7 @@ func (self *Kucoin) FetchOrderBook(symbol string, limit int64, params map[string
 	data := self.SafeValue(response, "data", map[string]interface{}{})
 	timestamp := self.SafeInteger(data, "time", 0)
 	orderbook := self.ParseOrderBook(data, timestamp, "bids", "asks", level-2, level-1)
-	self.SetValue(orderbook, "nonce", self.SafeInteger(data, "sequence", 0))
+	orderbook.Nonce = self.SafeInteger(data, "sequence", 0)
 	return orderbook, nil
 }
 
