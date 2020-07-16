@@ -1220,12 +1220,8 @@ func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amou
 }
 
 func (self *Exchange) Extend(maps ...interface{}) interface{} {
-	size := len(maps)
-	if size == 0 {
-		return maps
-	}
-	if size == 1 {
-		return maps[0]
+	if len(maps) == 0 {
+		return make(map[string]interface{})
 	}
 	output := make(map[string]interface{})
 	for _, m := range maps {
@@ -1507,7 +1503,7 @@ func (self *Exchange) ParseBalance(balances map[string]interface{}) (pAccount *A
 }
 
 func (self *Exchange) Uuid() string {
-	return fmt.Sprintf("%v", uuid.NewV4())
+	return uuid.NewV4().String()
 }
 
 func (self *Exchange) PriceToPrecision(symbol string, price float64) string {
