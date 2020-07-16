@@ -570,6 +570,7 @@ type ExchangeInterfaceInternal interface {
 	Describe() []byte
 	ParseOrder(interface{}, interface{}) map[string]interface{}
 	HandleErrors(code int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{})
+	Market(string) *Market
 }
 
 // Exchange struct
@@ -654,15 +655,12 @@ func (self *Exchange) Sign(path string, api string, method string, params map[st
 }
 
 func (self *Exchange) MarketId(symbol string) string {
-	if self.Markets == nil || len(self.Markets) == 0 {
-		self.RaiseException("InternalError", fmt.Sprintf("self.Markets not ready: %v", self.Markets))
-	}
-	if _, ok := self.Markets[symbol]; ok {
-		return self.Markets[symbol].Id
+	market := self.Child.Market(symbol)
+	if market != nil {
+		return market.Id
 	} else {
-		self.RaiseException("InternalError", fmt.Sprintf("symbol %v not int self.Markets:%v", symbol, self.Markets))
+		return symbol
 	}
-	return ""
 }
 
 func (self *Exchange) SetMarkets(markets []*Market, currencies map[string]*Currency) map[string]*Market {
@@ -1563,15 +1561,14 @@ func (self *Exchange) Member(o interface{}, idx interface{}) interface{} {
 
 func (self *Exchange) Market(symbol string) *Market {
 	if self.Markets == nil {
-		return nil
+		self.RaiseException("ExchangeError", self.Id+" markets not loaded")
 	}
 
-	v, ok := self.Markets[symbol]
-	if ok {
-		return v
-	} else {
-		return nil
+	m := self.Markets[symbol]
+	if m == nil {
+		self.RaiseException("BadSymbol", self.Id+" does not have market symbol "+symbol)
 	}
+	return m
 }
 
 func (self *Exchange) Unpack2(l interface{}) (interface{}, interface{}) {
@@ -1814,7 +1811,8 @@ func (self *Exchange) PanicToError(e interface{}) (err error) {
 		if len(args) == 2 {
 			errCls := args[0]
 			message := args[1]
-			err = errors.New(errCls + ": " + message)
+			//err = errors.New(errCls + ": " + message)
+			err = TypedError(errCls, message)
 		} else {
 			err = fmt.Errorf("Catch unknown panic: %v", e)
 		}

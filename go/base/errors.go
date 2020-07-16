@@ -1,11 +1,14 @@
 package base
 
 import (
+	"errors"
 	"fmt"
 )
 
+// TODO: 使用 unwrap 机制实现分级体系
 type BaseError string
 type ExchangeError BaseError
+type NetworkError BaseError
 
 type NotSupportedError ExchangeError
 type AuthenticationError ExchangeError
@@ -15,10 +18,10 @@ type InvalidOrder ExchangeError
 type OrderNotFound InvalidOrder
 type OrderNotCached InvalidOrder
 type CancelPending InvalidOrder
-type NetworkError BaseError
 type DDoSProtection NetworkError
 type RequestTimeout NetworkError
 type ExchangeNotAvailable NetworkError
+type BadSymbol BaseError
 
 func (err BaseError) Error() string            { return ErrString("BaseError", string(err)) }
 func (err ExchangeError) Error() string        { return ErrString("ExchangeError", string(err)) }
@@ -34,6 +37,7 @@ func (err NetworkError) Error() string         { return ErrString("NetworkError"
 func (err DDoSProtection) Error() string       { return ErrString("DDoSProtection", string(err)) }
 func (err RequestTimeout) Error() string       { return ErrString("RequestTimeout", string(err)) }
 func (err ExchangeNotAvailable) Error() string { return ErrString("ExchangeNotAvailable", string(err)) }
+func (err BadSymbol) Error() string            { return ErrString("BadSymbol", string(err)) }
 
 func ErrString(t, msg string) string {
 	if msg != "" {
@@ -72,7 +76,9 @@ func TypedError(t string, msg string) error {
 		return RequestTimeout(msg)
 	case "ExchangeNotAvailable":
 		return ExchangeNotAvailable(msg)
+	case "BadSymbol":
+		return BadSymbol(msg)
 	default:
-		return fmt.Errorf(msg)
+		return errors.New(ErrString(t, msg))
 	}
 }
