@@ -379,18 +379,8 @@ func (self *Kucoin) FetchOrderBook(symbol string, limit int64, params map[string
 			err = self.PanicToError(e)
 		}
 	}()
-	level := self.SafeInteger(params, "level", 2)
-	levelLimit := fmt.Sprintf("%d", level)
-	if levelLimit == "2" {
-		if limit > 0 {
-			if limit <= 20 {
-				limit = 20
-			} else {
-				limit = 100
-			}
-			levelLimit += "_" + fmt.Sprintf("%v", limit)
-		}
-	}
+	// 优化: 一般 20 档就足够了
+	levelLimit := "2_20"
 	self.LoadMarkets()
 	marketId := self.MarketId(symbol)
 	request := map[string]interface{}{
@@ -400,7 +390,7 @@ func (self *Kucoin) FetchOrderBook(symbol string, limit int64, params map[string
 	response := self.ApiFunc("publicGetMarketOrderbookLevelLevel", self.Extend(request, params), nil, nil)
 	data := self.SafeValue(response, "data", map[string]interface{}{})
 	timestamp := self.SafeInteger(data, "time", 0)
-	orderbook := self.ParseOrderBook(data, timestamp, "bids", "asks", level-2, level-1)
+	orderbook := self.ParseOrderBook(data, timestamp, "bids", "asks", 0, 1)
 	orderbook.Nonce = self.SafeInteger(data, "sequence", 0)
 	return orderbook, nil
 }

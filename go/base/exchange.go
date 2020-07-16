@@ -7,7 +7,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
-	"crypto/tls"
+	//"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -602,8 +602,8 @@ func (self *Exchange) Init(config *ExchangeConfig) (err error) {
 	}
 
 	tr := &http.Transport{
-		Proxy:           http.ProxyFromEnvironment,
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		Proxy: http.ProxyFromEnvironment,
+		//TLSClientConfig: &tls.Config{InsecureSkipVerify: false},
 	}
 	self.Client = &http.Client{
 		Transport: tr,
@@ -1182,19 +1182,23 @@ func SortSliceByIndex(s [][2]float64, idx int, descending bool) {
 	}
 }
 
-func ToFloat(x interface{}) (float64, error) {
-	if str_x, ok := x.(string); ok {
-		if y, err := strconv.ParseFloat(str_x, 64); err == nil {
-			return y, err
+func ToFloat(v interface{}) float64 {
+	switch v.(type) {
+	case float64:
+		return v.(float64)
+	case string:
+		vStr := v.(string)
+		vF, err := strconv.ParseFloat(vStr, 64)
+		if err != nil {
+			panic(fmt.Sprintf("ToFloat error (%s): %v", err.Error(), v))
 		}
+		return vF
+	default:
+		panic(fmt.Sprintf("ToFloat error: %v", v))
 	}
-	if y, ok := x.(float64); ok {
-		return y, nil
-	}
-	return 0, nil
 }
 
-func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amountKey int64, out *[][2]float64) {
+func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amountKey int64) (out [][2]float64) {
 	if len(bidsAsks) == 0 {
 		return
 	}
@@ -1205,18 +1209,17 @@ func (self *Exchange) ParseBidsAsks(bidsAsks []interface{}, priceKey int64, amou
 				price := bidAsk[priceKey]
 				amount := bidAsk[amountKey]
 				if price != "" && amount != "" {
-					priceF, err1 := ToFloat(price)
-					amountF, err2 := ToFloat(amount)
-					if err1 == nil && err2 == nil {
-						*out = append(*out, [2]float64{priceF, amountF})
-					}
+					priceF := ToFloat(price)
+					amountF := ToFloat(amount)
+					out = append(out, [2]float64{priceF, amountF})
 				}
 			}
 		}
 	} else {
-		if _, ok := bidsAsks[0].(map[int]interface{}); ok {
-		}
+		self.RaiseException("ExchangeError", "unrecognized bidask format: "+fmt.Sprint(bidsAsks[0]))
 	}
+
+	return
 }
 
 func (self *Exchange) Extend(maps ...interface{}) interface{} {
@@ -1298,13 +1301,13 @@ func (self *Exchange) ParseOrderBook(orderBook interface{}, timeStamp int64, bid
 	if orderBookMap, ok := orderBook.(map[string]interface{}); ok {
 		if bids, ok := orderBookMap[bidsKey]; ok {
 			if bidsList, ok := bids.([]interface{}); ok {
-				self.ParseBidsAsks(bidsList, priceKey, amountKey, &result.Bids)
+				result.Bids = self.ParseBidsAsks(bidsList, priceKey, amountKey)
 				SortSliceByIndex(result.Bids, 0, true)
 			}
 		}
 		if asks, ok := orderBookMap[asksKey]; ok {
 			if asksList, ok := asks.([]interface{}); ok {
-				self.ParseBidsAsks(asksList, priceKey, amountKey, &result.Asks)
+				result.Asks = self.ParseBidsAsks(asksList, priceKey, amountKey)
 				SortSliceByIndex(result.Asks, 0, false)
 			}
 		}
