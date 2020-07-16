@@ -679,3 +679,17 @@ func (self *Kucoin) HandleErrors(code int64, reason string, url string, method s
 	self.ThrowExactlyMatchedException(self.Member(self.Exceptions, "exact"), message, message)
 	self.ThrowExactlyMatchedException(self.Member(self.Exceptions, "exact"), errorCode, message)
 }
+
+func (self *Kucoin) LoadMarkets() map[string]*Market {
+	return nil
+}
+
+func (self *Kucoin) Market(symbol string) *Market {
+	li := strings.Split(symbol, "/")
+	return &Market{
+		Id:     li[0] + "-" + li[1],
+		Symbol: symbol,
+		Base:   li[0],
+		Quote:  li[1],
+	}
+}
