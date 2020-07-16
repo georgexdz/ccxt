@@ -1,9 +1,13 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 import os
 import sys
 import traceback
 import re
 import humps
+import subprocess
+import shlex
 
 import esprima
 import json
@@ -676,6 +680,10 @@ def write_ex_file(ex, code):
         f.write(code)
     with open(os.path.join(des_dir, f'{ex.lower()}_test.go'), 'w') as f:
         f.write(format_test_file(ex))
+    # go fmt
+    cmd = "go fmt -x %s" % shlex.quote(des_dir)
+    p = subprocess.Popen(cmd, shell=True)
+    p.communicate()
 
 
 def translate():

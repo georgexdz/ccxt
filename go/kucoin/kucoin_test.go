@@ -1,88 +1,83 @@
-
 package kucoin
 
 import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"testing"
 )
 
-func get_test_config(ex *Kucoin) {
-	plan, err := ioutil.ReadFile("test_config.json")
+func init() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+}
+
+// api.json 需要放到和此文件同一目录
+func loadApiKey(ex *Kucoin) {
+	plan, err := ioutil.ReadFile("api.json")
 	if err != nil {
 		return
 	}
 
-	var data interface{}
+	var data map[string]interface{}
 	err = json.Unmarshal(plan, &data)
 	if err != nil {
 		return
 	}
-	
-	fmt.Println(data)
 
-	if json_config, ok := data.(map[string]interface{}); ok {
-        ex.Urls = map[string]interface{}{
-        	"api": map[string]interface{}{
-        		"public": json_config["url"],
-        		"private": json_config["url"],
-			},
-        }
-		ex.ApiUrls["private"] = json_config["url"].(string)
-		ex.ApiUrls["public"] = json_config["url"].(string)
-		ex.ApiKey = json_config["key"].(string)
-		ex.Secret = json_config["secret"].(string)
-		ex.Password = json_config["password"].(string)
-	}
+	ex.ApiKey = data["apiKey"].(string)
+	ex.Secret = data["secret"].(string)
+	ex.Password = data["password"].(string)
 }
 
 func TestFetchOrderBook(t *testing.T) {
 	ex, err := New(nil)
 	if err != nil {
-		fmt.Println(err.Error())
-		return
+		t.Fatal(err)
 	}
 
-	fmt.Println(ex.Exceptions)
 	ex.Verbose = true
+	loadApiKey(ex)
 
-	get_test_config(ex)
-
-	orderbook, err := ex.FetchOrderBook("BTC/USDT", 20, nil)
+	// @ FetchOrderBook
+	orderbook, err := ex.FetchOrderBook("BTC/USDT", 5, nil)
 	if err != nil {
-		fmt.Println(err.Error())
-		return
+		t.Fatal(err)
 	}
-	fmt.Println("orderbook:", orderbook)
+	fmt.Println("FetchOrderBook:", orderbook)
 
-	markets := ex.LoadMarkets()
-	fmt.Println("markets:", markets)
-
-	ex.FetchBalance(nil)
-
-	order, err := ex.CreateOrder("ETH/BTC", "limit", "buy", 0.0001, 0.024, nil)
+	// @ FetchBalance
+	balance, err := ex.FetchBalance(nil)
 	if err != nil {
-		return
+		t.Fatal(err)
 	}
+	fmt.Println("FetchBalance:", ex.Json(balance))
 
-	fmt.Println(ex.FetchOrder(order.Id, "ETH/BTC", nil))
-
-	openOrders, err := ex.FetchOpenOrders("ETH/BTC", 0, 20, nil)
-	if err == nil {
-		fmt.Println("openorders", openOrders)
+	// @ CreateOrder
+	order, err := ex.CreateOrder("ETH/BTC", "limit", "buy", 0.0001, 0.01, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
+	fmt.Println("CreateOrder:", order.Id)
 
-	if err == nil {
-		res, err := ex.CancelOrder(order.Id, "ETH/BTC", nil)
-		fmt.Println(res, err)
+	// @ FetchOrder
+	o, err := ex.FetchOrder(order.Id, "ETH/BTC", nil)
+	if err != nil {
+		t.Fatal(err)
 	}
+	fmt.Println("FetchOrder:", ex.Json(o))
+
+	// @ FetchOpenOrders
+	openOrders, err := ex.FetchOpenOrders("ETH/BTC", 0, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println("FetchOpenOrders:", ex.Json(openOrders))
+
+	// @ CancelOrder
+	resp, err := ex.CancelOrder(order.Id, "ETH/BTC", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println("CancelOrder:", resp)
 }
-
-//func main() {
-	//ex := &ccxt.Kucoin{}
-	//ex.Init()
-	//// testFetchMarkets(ex)
-	//fmt.Println("enter")
-	//testFetchOrderBook(ex)
-//}
