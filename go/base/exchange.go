@@ -326,15 +326,11 @@ type Order struct {
 	Info          interface{} `json:"info"`
 }
 
-//func (o Order) String() string {
-//	return fmt.Sprintf("%s %f %s @%f (filled: %f)",
-//		o.Side, o.Amount, o.Symbol, o.Price, o.Filled)
-//}
-
 func (o *Order) InitFromMap(m map[string]interface{}) (result *Order) {
 	defer func() {
 		if r := recover(); r != nil {
-			panic([]string{"InternalError", fmt.Sprintf("error order: %s: %v", m, r)})
+			// TODO: 需要提取出来具体是什么错误
+			panic(r)
 		}
 	}()
 
@@ -890,15 +886,16 @@ func (self *Exchange) Fetch(url string, method string, headers map[string]interf
 	respRaw, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		self.RaiseException("InternalError", fmt.Sprintf("read response err: %v", err))
-		return
-	}
-
-	err = json.Unmarshal(respRaw, &response)
-	if self.Verbose {
-		log.Println(fmt.Sprintf("Response: %v, %v, %v, %v, %v, %v", method, url, resp.StatusCode, resp.Header, respRaw, response))
 	}
 
 	strRawResp := string(respRaw)
+	if self.Verbose {
+		log.Println("Response:", method, url, resp.StatusCode, resp.Header, strRawResp)
+	}
+
+	// ignore error
+	_ = json.Unmarshal(respRaw, &response)
+
 	self.Child.HandleErrors(int64(resp.StatusCode), resp.Status, url, method, resp.Header, strRawResp, response, headers, body)
 	if resp.StatusCode != 200 {
 		self.HandleRestErrors(resp.StatusCode, resp.Status, strRawResp, url, method)
@@ -1007,17 +1004,6 @@ func Init(conf ccxt.ExchangeConfig) (*Exchange, error) {
 func Exchanges() []string {
 	available := []string{"bitmex"}
 	return available
-}
-
-// Info on the exchange
-func Info(x Exchange) {
-	var info interface{}
-	info = x
-	msg, err := json.MarshalIndent(info, "", "  ")
-	if err != nil {
-		fmt.Printf("Error JSONMarshal: %v", err)
-	}
-	fmt.Println(string(msg))
 }
 
 func MapValues(input interface{}) []interface{} {
@@ -1478,7 +1464,7 @@ func JWT(claims map[string]interface{}, secret string) string {
 	token.Claims = jwt.MapClaims(claims)
 	result, err := token.SignedString([]byte(secret))
 	if err != nil {
-		panic([]string{"InternalError", fmt.Sprintf("JWT error: %v", err)})
+		RaiseException("InternalError", fmt.Sprintf("JWT error: %v", err))
 	}
 	return result
 }
@@ -1615,16 +1601,8 @@ func (self *Exchange) IfThenElse(condition bool, a interface{}, b interface{}) i
 	return b
 }
 
+// x == undefined
 func (self *Exchange) TestNil(x interface{}) bool {
-	/*
-	fmt.Println(xx(""))
-	fmt.Println(xx(0))
-	fmt.Println(xx(0.))
-	fmt.Println(xx(nil))
-	fmt.Println(xx((*int)(nil)))
-	fmt.Println(xx(map[string]string{}))
-	fmt.Println(xx([]string{}))
-	 */
 	if x == nil {
 		return true
 	}
@@ -1796,8 +1774,12 @@ func (self *Exchange) PrecisionFromString(s string) int {
 	}
 }
 
-func (self *Exchange) RaiseException(errCls interface{}, msg interface{}) {
+func RaiseException(errCls interface{}, msg interface{}) {
 	panic([]string{errCls.(string), msg.(string)})
+}
+
+func (self *Exchange) RaiseException(errCls interface{}, msg interface{}) {
+	RaiseException(errCls, msg)
 }
 
 func (self *Exchange) ThrowExactlyMatchedException(exact interface{}, s interface{}, message interface{}) {
@@ -1825,15 +1807,19 @@ func (self *Exchange) ThrowBroadlyMatchedException(broad interface{}, s interfac
 }
 
 func (self *Exchange) PanicToError (e interface{}) (err error) {
-	fmt.Println("panic: ", e)
+	//fmt.Println("panic: ", e)
 	switch e.(type) {
 	case []string:
-		 args := e.([]string)
-		 errCls := args[0]
-		 message := args[1]
-		 err = errors.New(errCls + "|" + message)
+		args := e.([]string)
+		if len(args) == 2 {
+			errCls := args[0]
+			message := args[1]
+			err = errors.New(errCls + ":" + message)
+		} else {
+			err = fmt.Errorf("Catch unknown panic: %v", e)
+		}
 	default:
-		 panic(e)
+		err = fmt.Errorf("Catch unknown panic: %v", e)
 	}
 	return
 }
@@ -1871,15 +1857,14 @@ func (self *Exchange) IsJsonEncodedObject(input interface{}) bool {
 func (self *Exchange) HandleRestResponse(response string, jsonResponse interface{}, url string, method string) {
 	if self.IsJsonEncodedObject(response) && self.TestNil(jsonResponse) {
 		dDoSProtectionMatched, _ := regexp.MatchString("(?i)(cloudflare|incapsula|overload|ddos)", response)
-		exchangeNotAvailableMatched, _ := regexp.MatchString("(?i)(offline|busy|retry|wait|unavailable|maintain|maintenance|maintenancing)", response)
 		if dDoSProtectionMatched {
 			self.RaiseException("DDoSProtection", strings.Join([]string{method, url, response}, " "))
 		}
+		exchangeNotAvailableMatched, _ := regexp.MatchString("(?i)(offline|busy|retry|wait|unavailable|maintain|maintenance|maintenancing)", response)
 		if exchangeNotAvailableMatched {
 			message := response + " exchange downtime, exchange closed for maintenance or offline, DDoS protection or rate-limiting in effect"
 			self.RaiseException("ExchangeNotAvailable", strings.Join([]string{method, url, response, message}, " "))
 		}
 		self.RaiseException("ExchangeError", strings.Join([]string{method, url, response}, " "))
 	}
-
 }
