@@ -5,80 +5,105 @@ import (
 	"fmt"
 )
 
-// TODO: 使用 unwrap 机制实现分级体系
-type BaseError string
-type ExchangeError BaseError
-type NetworkError BaseError
+var (
+	BaseError = errors.New("")
 
-type NotSupportedError ExchangeError
-type AuthenticationError ExchangeError
-type InvalidNonce ExchangeError
-type InsufficientFunds ExchangeError
-type InvalidOrder ExchangeError
-type OrderNotFound InvalidOrder
-type OrderNotCached InvalidOrder
-type CancelPending InvalidOrder
-type DDoSProtection NetworkError
-type RequestTimeout NetworkError
-type ExchangeNotAvailable NetworkError
-type BadSymbol BaseError
+	InternalError = fmt.Errorf("%w", BaseError)
 
-func (err BaseError) Error() string            { return ErrString("BaseError", string(err)) }
-func (err ExchangeError) Error() string        { return ErrString("ExchangeError", string(err)) }
-func (err NotSupportedError) Error() string    { return ErrString("NotSupportedError", string(err)) }
-func (err AuthenticationError) Error() string  { return ErrString("AuthenticationError", string(err)) }
-func (err InvalidNonce) Error() string         { return ErrString("InvalidNonce", string(err)) }
-func (err InsufficientFunds) Error() string    { return ErrString("InsufficientFunds", string(err)) }
-func (err InvalidOrder) Error() string         { return ErrString("InvalidOrder", string(err)) }
-func (err OrderNotFound) Error() string        { return ErrString("OrderNotFound", string(err)) }
-func (err OrderNotCached) Error() string       { return ErrString("OrderNotCached", string(err)) }
-func (err CancelPending) Error() string        { return ErrString("CancelPending", string(err)) }
-func (err NetworkError) Error() string         { return ErrString("NetworkError", string(err)) }
-func (err DDoSProtection) Error() string       { return ErrString("DDoSProtection", string(err)) }
-func (err RequestTimeout) Error() string       { return ErrString("RequestTimeout", string(err)) }
-func (err ExchangeNotAvailable) Error() string { return ErrString("ExchangeNotAvailable", string(err)) }
-func (err BadSymbol) Error() string            { return ErrString("BadSymbol", string(err)) }
+	ExchangeError = fmt.Errorf("%w", BaseError)
 
-func ErrString(t, msg string) string {
-	if msg != "" {
-		return fmt.Sprintf("%s: %s", t, msg)
-	}
-	return t
-}
+	AuthenticationError = fmt.Errorf("%w", ExchangeError)
+	PermissionDenied = fmt.Errorf("%w", AuthenticationError)
+	AccountSuspended = fmt.Errorf("%w", AuthenticationError)
+
+	ArgumentsRequired = fmt.Errorf("%w", ExchangeError)
+	BadRequest = fmt.Errorf("%w", ExchangeError)
+	BadSymbol = fmt.Errorf("%w", BadRequest)
+
+	BadResponse = fmt.Errorf("%w", ExchangeError)
+	NullResponse = fmt.Errorf("%w", BadResponse)
+
+	InsufficientFunds = fmt.Errorf("%w", ExchangeError)
+	InvalidAddress = fmt.Errorf("%w", ExchangeError)
+	AddressPending = fmt.Errorf("%w", InvalidAddress)
+
+	InvalidOrder = fmt.Errorf("%w", ExchangeError)
+	OrderNotFound = fmt.Errorf("%w", InvalidOrder)
+	OrderNotCached = fmt.Errorf("%w", InvalidOrder)
+	CancelPending = fmt.Errorf("%w", InvalidOrder)
+	OrderImmediatelyFillable = fmt.Errorf("%w", InvalidOrder)
+	OrderNotFillable = fmt.Errorf("%w", InvalidOrder)
+	DuplicateOrderId = fmt.Errorf("%w", InvalidOrder)
+
+	NotSupported = fmt.Errorf("%w", ExchangeError)
+
+	NetworkError = fmt.Errorf("%w", BaseError)
+	DDoSProtection = fmt.Errorf("%w", NetworkError)
+	RateLimitExceeded = fmt.Errorf("%w", DDoSProtection)
+	ExchangeNotAvailable = fmt.Errorf("%w", NetworkError)
+	OnMaintenance = fmt.Errorf("%w", ExchangeNotAvailable)
+	InvalidNonce = fmt.Errorf("%w", NetworkError)
+	RequestTimeout = fmt.Errorf("%w", NetworkError)
+)
+
 
 // TypedError creates a typed error from type t and message, if type does
 // not match a known error type, fmt.Errorf will be used
 func TypedError(t string, msg string) error {
+	var err error
 	switch t {
-	case "ExchangeError":
-		return ExchangeError(msg)
-	case "NotSupportedError":
-		return NotSupportedError(msg)
+	case "BaseError":
+		err = BaseError
+	case "AccountSuspended":
+		err = AccountSuspended
+	case "NullResponse":
+		err = NullResponse
+	case "AddressPending":
+		err = AddressPending
+	case "OrderImmediatelyFillable":
+		err = OrderImmediatelyFillable
+	case "OrderNotFillable":
+		err = OrderNotFillable
+	case "DuplicateOrderId":
+		err = DuplicateOrderId
+	case "OnMaintenance":
+		err = OnMaintenance
+	case "NotSupported":
+		err = NotSupported
+	case "RateLimitExceeded":
+		err = RateLimitExceeded
+	case "ArgumentsRequired":
+		err = ArgumentsRequired
 	case "AuthenticationError":
-		return AuthenticationError(msg)
+		err = AuthenticationError
 	case "InvalidNonce":
-		return InvalidNonce(msg)
+		err = InvalidNonce
 	case "InsufficientFunds":
-		return InsufficientFunds(msg)
+		err = InsufficientFunds
 	case "InvalidOrder":
-		return InvalidOrder(msg)
+		err = InvalidOrder
 	case "OrderNotFound":
-		return OrderNotFound(msg)
+		err = OrderNotFound
 	case "OrderNotCached":
-		return OrderNotCached(msg)
+		err = OrderNotCached
+	case "PermissionDenied":
+		err = PermissionDenied
 	case "CancelPending":
-		return CancelPending(msg)
+		err = CancelPending
 	case "NetworkError":
-		return NetworkError(msg)
+		err = NetworkError
 	case "DDoSProtection":
-		return DDoSProtection(msg)
+		err = DDoSProtection
 	case "RequestTimeout":
-		return RequestTimeout(msg)
+		err = RequestTimeout
 	case "ExchangeNotAvailable":
-		return ExchangeNotAvailable(msg)
+		err = ExchangeNotAvailable
 	case "BadSymbol":
-		return BadSymbol(msg)
+		err = BadSymbol
 	default:
-		return errors.New(ErrString(t, msg))
+		err = errors.New(t)
 	}
+
+	return fmt.Errorf("%w%v:%v", err, t, msg)
 }
+
