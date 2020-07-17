@@ -624,7 +624,7 @@ func (self *Kucoin) Sign(path string, api string, method string, params map[stri
 	versions := self.SafeValue(self.Options, "versions", map[string]interface{}{})
 	apiVersions := self.SafeValue(versions, api, nil)
 	methodVersions := self.SafeValue(apiVersions, method, map[string]interface{}{})
-	defaultVersion := self.SafeString(methodVersions, path, self.Member(self.Options, "version"))
+	defaultVersion := self.SafeString(methodVersions, path, self.Member(self.Options, "version").(string))
 	version := self.SafeString(params, "version", defaultVersion)
 	params = self.Omit(params, "version")
 	endpoint := "/api/" + version + "/" + self.ImplodeParams(path, params)

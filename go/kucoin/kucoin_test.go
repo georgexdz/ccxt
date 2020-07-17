@@ -2,7 +2,6 @@ package kucoin
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"testing"
@@ -44,40 +43,40 @@ func TestFetchOrderBook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Println("FetchOrderBook:", orderbook)
+	log.Println("##### FetchOrderBook:", orderbook)
 
 	// @ FetchBalance
 	balance, err := ex.FetchBalance(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Println("FetchBalance:", ex.Json(balance))
+	log.Println("##### FetchBalance:", ex.Json(balance))
 
 	// @ CreateOrder
 	order, err := ex.CreateOrder("ETH/BTC", "limit", "buy", 0.0001, 0.01, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Println("CreateOrder:", order.Id)
+	log.Println("##### CreateOrder:", order.Id)
 
 	// @ FetchOrder
 	o, err := ex.FetchOrder(order.Id, "ETH/BTC", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Println("FetchOrder:", ex.Json(o))
+	log.Println("##### FetchOrder:", ex.Json(o))
 
 	// @ FetchOpenOrders
 	openOrders, err := ex.FetchOpenOrders("ETH/BTC", 0, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Println("FetchOpenOrders:", ex.Json(openOrders))
+	log.Println("##### FetchOpenOrders:", ex.Json(openOrders))
 
 	// @ CancelOrder
 	resp, err := ex.CancelOrder(order.Id, "ETH/BTC", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Println("CancelOrder:", resp)
+	log.Println("##### CancelOrder:", resp)
 }
