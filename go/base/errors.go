@@ -106,6 +106,6 @@ func TypedError(t string, msg string) error {
 		err = errors.New(t)
 	}
 
-	return fmt.Errorf("%w%v:%v", err, t, msg)
+	return fmt.Errorf("%w%v: %v", err, t, msg)
 }
 
