@@ -100,6 +100,8 @@ func TypedError(t string, msg string) error {
 		err = ExchangeNotAvailable
 	case "BadSymbol":
 		err = BadSymbol
+	case "InternalError":
+		err = InternalError
 	default:
 		err = errors.New(t)
 	}
