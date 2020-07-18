@@ -528,6 +528,7 @@ type ExchangeInterface interface {
 	FetchBalance(params map[string]interface{}) (*Account, error)
 	//FetchCurrencies() (map[string]*Currency, error)
 	FetchMarkets(params map[string]interface{}) interface{}
+	FetchAccounts(params map[string]interface{}) []interface{}
 
 	CreateOrder(symbol, otype, side string, amount float64, price float64, params map[string]interface{}) (*Order, error)
 	LimitBuy(symbol string, price, amount float64, params map[string]interface{}) (*Order, error)
@@ -585,6 +586,8 @@ type Exchange struct {
 	Symbols        []string
 	Currencies     map[string]*Currency
 	CurrenciesById map[string]*Currency
+	Accounts       []interface{}
+	AccountsById   map[string]interface{}
 
 	Child          ExchangeInterfaceInternal
 	ApiDecodeInfo  map[string]*ApiDecode
@@ -811,6 +814,15 @@ func (self *Exchange) LoadMarkets() map[string]*Market {
 
 		return self.SetMarkets(markets, currencies)
 	*/
+}
+
+func (self *Exchange) LoadAccounts() []interface{} {
+	if len(self.Accounts) > 0 {
+		return self.Accounts
+	}
+	self.Accounts = self.Child.FetchAccounts(nil)
+	self.AccountsById = self.IndexBy(self.Accounts, "id")
+	return self.Accounts
 }
 
 func (self *Exchange) Request(
@@ -1182,6 +1194,28 @@ func SortSliceByIndex(s [][2]float64, idx int, descending bool) {
 	}
 }
 
+func ToInteger(v interface{}) int64 {
+	switch v.(type) {
+	case int:
+		return int64(v.(int))
+	case int64:
+		return v.(int64)
+	case float32:
+		return int64(v.(float32))
+	case float64:
+		return int64(v.(float64))
+	case string:
+		vStr := v.(string)
+		vv, err := strconv.ParseInt(vStr, 10, 64)
+		if err != nil {
+			panic(fmt.Sprintf("ToInteger error (%s): %v", err.Error(), v))
+		}
+		return vv
+	default:
+		panic(fmt.Sprintf("ToInteger error: %v", v))
+	}
+}
+
 func ToFloat(v interface{}) float64 {
 	switch v.(type) {
 	case float64:
@@ -1269,13 +1303,23 @@ func (self *Exchange) SafeList(m map[string]interface{}, key string, defaultVal 
 	return defaultVal
 }
 
-func (self *Exchange) SafeValue(m interface{}, key string, defaultVal interface{}) (val interface{}) {
+func (self *Exchange) SafeValue(m interface{}, key interface{}, args ...interface{}) (val interface{}) {
+	var def interface{}
+	if len(args) > 0 {
+		def = args[0]
+	}
 	if mm, ok := m.(map[string]interface{}); ok {
-		if val, ok := mm[key]; ok {
+		if val, ok := mm[key.(string)]; ok {
 			return val
 		}
 	}
-	return defaultVal
+	if li, ok := m.([]interface{}); ok {
+		idx := int(ToInteger(key))
+		if idx >= 0 && idx < len(li) {
+			return li[idx]
+		}
+	}
+	return def
 }
 
 func NestedMapLookup(m map[string]interface{}, ks ...string) (rval interface{}, err error) {
@@ -1334,23 +1378,31 @@ func (self *Exchange) SafeInteger(d interface{}, key string, defaultVal int64) (
 	return defaultVal
 }
 
-func (self *Exchange) SafeString2(d interface{}, key1 string, key2 string, DefaultValue interface{}) (result string) {
-	if d, ok := d.(map[string]interface{}); ok {
-		if val, ok := d[key1]; ok {
-			if strVal, ok := val.(string); ok {
-				return strVal
-			}
-		}
-		if val, ok := d[key2]; ok {
-			if strVal, ok := val.(string); ok {
-				return strVal
-			}
-		}
-	}
-	return DefaultValue.(string)
+func (self *Exchange) SafeInteger2(d interface{}, key1 string, key2 string, defaultVal int64) int64 {
+	return ToInteger(self.SafeEither(d, key1, key2, defaultVal))
 }
 
-func (self *Exchange) SafeString(d interface{}, key string, DefaultValue interface{}) (result string) {
+func (self *Exchange) SafeFloat2(d interface{}, key1 string, key2 string, defaultVal float64) float64 {
+	return ToFloat(self.SafeEither(d, key1, key2, defaultVal))
+}
+
+func (self *Exchange) SafeString2(d interface{}, key1 string, key2 string, defaultVal string) string {
+	return self.SafeEither(d, key1, key2, defaultVal).(string)
+}
+
+func (self *Exchange) SafeEither(d interface{}, key1 string, key2 string, defaultVal interface{}) interface{} {
+	if d, ok := d.(map[string]interface{}); ok {
+		if val, ok := d[key1]; ok {
+			return val
+		}
+		if val, ok := d[key2]; ok {
+			return val
+		}
+	}
+	return defaultVal
+}
+
+func (self *Exchange) SafeString(d interface{}, key string, defaultVal string) string {
 	if d, ok := d.(map[string]interface{}); ok {
 		if val, ok := d[key]; ok {
 			if strVal, ok := val.(string); ok {
@@ -1358,10 +1410,14 @@ func (self *Exchange) SafeString(d interface{}, key string, DefaultValue interfa
 			}
 		}
 	}
-	return DefaultValue.(string)
+	return defaultVal
 }
 
-func (self *Exchange) SafeFloat(d interface{}, key string, DefaultValue float64) (result float64) {
+func (self *Exchange) SafeStringLower(d interface{}, key string, defaultVal string) string {
+	return strings.ToLower(self.SafeString(d, key, defaultVal))
+}
+
+func (self *Exchange) SafeFloat(d interface{}, key string, defaultVal float64) (result float64) {
 	if d, ok := d.(map[string]interface{}); ok {
 		if val, ok := d[key]; ok {
 			switch val.(type) {
@@ -1379,11 +1435,11 @@ func (self *Exchange) SafeFloat(d interface{}, key string, DefaultValue float64)
 			case float64:
 				return val.(float64)
 			case nil:
-				return DefaultValue
+				return defaultVal
 			}
 		}
 	}
-	return DefaultValue
+	return defaultVal
 }
 
 func (self *Exchange) Omit(d map[string]interface{}, args interface{}) (result map[string]interface{}) {
@@ -1875,4 +1931,51 @@ func (self *Exchange) HandleRestResponse(response string, jsonResponse interface
 
 func (self *Exchange) Float64ToString(f float64) string {
 	return fmt.Sprintf("%v", f)
+}
+
+// 如果是 map 就使用值转为 slice
+// FIXME: 需要对map的key排序一下
+func (self *Exchange) Values(x interface{}) []interface{} {
+	if v, ok := x.([]interface{}); ok {
+		return v
+	} else if v, ok := x.(map[string]interface{}); ok {
+		out := make([]interface{}, 0, len(v))
+		for _, vv := range v {
+			out = append(out, vv)
+		}
+		return out
+	}
+	self.RaiseException("InternalError", "Values error: "+fmt.Sprint(x))
+	return nil
+}
+
+/*
+   Accepts a map/array of objects and a key name to be used as an index:
+   array = [
+      { someKey: 'value1', anotherKey: 'anotherValue1' },
+      { someKey: 'value2', anotherKey: 'anotherValue2' },
+      { someKey: 'value3', anotherKey: 'anotherValue3' },
+   ]
+   key = 'someKey'
+
+   Returns a map:
+  {
+      value1: { someKey: 'value1', anotherKey: 'anotherValue1' },
+      value2: { someKey: 'value2', anotherKey: 'anotherValue2' },
+      value3: { someKey: 'value3', anotherKey: 'anotherValue3' },
+  }
+*/
+func (self *Exchange) IndexBy(x interface{}, k string) map[string]interface{} {
+	out := map[string]interface{}{}
+	for _, v := range self.Values(x) {
+		m := v.(map[string]interface{})
+		if _, ok := m[k]; ok {
+			out[m[k].(string)] = v
+		}
+	}
+	return out
+}
+
+func (self *Exchange) FetchAccounts(params map[string]interface{}) []interface{} {
+	return nil
 }
