@@ -149,7 +149,7 @@ FUNC_ARG_MAP = {
     'parseOrders': 'status string, symbol string, since int64, limit int64, params map[string]interface{}',
     'fetchMarkets': 'params map[string]interface{}',
     'fetchCurrencies': 'params map[string]interface{}',
-    'handleErrors': 'code int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}',
+    'handleErrors': 'httpCode int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}',
 }
 RETURN_MAP = {
     'createOrder': 'result *Order, err error',
@@ -189,6 +189,10 @@ def get_arg(func_name):
 
 
 DEFAULT_FUNC_ARGS = {
+    'SafeStringLower'.lower(): (3, '""'),
+    'SafeString2'.lower(): (4, '""'),
+    'SafeInteger2'.lower(): (4, 0),
+    'SafeFloat2'.lower(): (4, 0.),
     'SafeValue'.lower(): (3, 'nil'),
     'SafeString'.lower(): (3, '""'),
     'ApiFunc'.lower(): (4, 'nil'),
@@ -426,8 +430,7 @@ def ForStatement(syntax, info={}):
 
 
 def ThrowStatement(syntax, info={}):
-    err_info = ','.join([call_func_by_syntax(o) for o in syntax.argument.arguments])
-    return f'err = errors.New({err_info});\nreturn'
+    return f'self.RaiseException("{syntax.argument.callee.name}", {call_func_by_syntax(syntax.argument.arguments[0])})'
 
 
 def LogicalExpression(syntax, info={}):
@@ -504,7 +507,6 @@ def format_header():
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	. "github.com/georgexdz/ccxt/go/base"
 	"reflect"
@@ -681,6 +683,7 @@ def write_ex_file(ex, code):
     with open(os.path.join(des_dir, f'{ex.lower()}_test.go'), 'w') as f:
         f.write(format_test_file(ex))
     # go fmt
+    return
     cmd = "go fmt -x %s" % shlex.quote(des_dir)
     p = subprocess.Popen(cmd, shell=True)
     p.communicate()

@@ -1402,7 +1402,7 @@ func (self *Exchange) SafeEither(d interface{}, key1 string, key2 string, defaul
 	return defaultVal
 }
 
-func (self *Exchange) SafeString(d interface{}, key string, defaultVal string) string {
+func (self *Exchange) SafeString(d interface{}, key string, defaultVal interface{}) string {
 	if d, ok := d.(map[string]interface{}); ok {
 		if val, ok := d[key]; ok {
 			if strVal, ok := val.(string); ok {
@@ -1410,7 +1410,7 @@ func (self *Exchange) SafeString(d interface{}, key string, defaultVal string) s
 			}
 		}
 	}
-	return defaultVal
+	return defaultVal.(string)
 }
 
 func (self *Exchange) SafeStringLower(d interface{}, key string, defaultVal string) string {
@@ -1832,6 +1832,10 @@ func RaiseException(errCls interface{}, msg interface{}) {
 	panic([]string{errCls.(string), msg.(string)})
 }
 
+func (self *Exchange) RaiseInternalException(msg interface{}) {
+	self.RaiseException("InternalError", msg)
+}
+
 func (self *Exchange) RaiseException(errCls interface{}, msg interface{}) {
 	RaiseException(errCls, msg)
 }
@@ -1979,3 +1983,64 @@ func (self *Exchange) IndexBy(x interface{}, k string) map[string]interface{} {
 func (self *Exchange) FetchAccounts(params map[string]interface{}) []interface{} {
 	return nil
 }
+
+func (self *Exchange) ToArray(o interface{}) (result []interface{}) {
+	switch reflect.TypeOf(o).Kind() {
+	case reflect.Map:
+		for k, v := range o.([]interface{}) {
+			result = append(result, []interface{}{k, v})
+		}
+	case reflect.Slice:
+		result = o.([]interface{})
+	default:
+		self.RaiseInternalException("unsupport type for ToArray!")
+	}
+	return
+}
+
+func (self* Exchange) ArrayConcat(a interface{}, b interface{}) (result []interface{}) {
+	return append(a.([]interface{}), b.([]interface{}))
+}
+
+/*
+func (self *Exchange) FilterBySymbolSinceLimit(arr interface{}, field string, value string, since int64, limit int64, key string, tail) (result []interface{}) {
+	result = self.ToArray(arr)
+
+	if value != "" {
+		tmp := []interface{}{}
+		for _, one := range result {
+			if entry, ok := one.(map[string]interface{}); ok {
+				if entry[field] == value {
+					tmp = append(tmp, entry)
+				}
+			}
+		}
+		result = tmp
+	}
+	if since != 0 {
+		tmp := []interface{}{}
+		for _, one := range result {
+			if entry, ok := one.(map[string]interface{}); ok {
+				if entry[field] >= since {
+					tmp = append(tmp, entry)
+				}
+			}
+		}
+		result = tmp
+	}
+
+}
+    def filter_by_value_since_limit(self, array, field, value=None, since=None, limit=None, key='timestamp', tail=False):
+        array = self.to_array(array)
+        if value is not None:
+            array = [entry for entry in array if entry[field] == value]
+        if since is not None:
+            array = [entry for entry in array if entry[key] >= since]
+        if limit is not None:
+            array = array[-limit:] if tail and (since is None) else array[:limit]
+        return array
+
+    def filter_by_symbol_since_limit(self, array, symbol=None, since=None, limit=None):
+        return self.filter_by_value_since_limit(array, 'symbol', symbol, since, limit)
+
+ */
