@@ -1,11 +1,10 @@
-
-    
-    package bitmax
+package bitmax
 
 import (
 	"encoding/json"
 	"fmt"
 	. "github.com/georgexdz/ccxt/go/base"
+	"math"
 	"reflect"
 	"strings"
 )
@@ -56,8 +55,7 @@ func (self *Bitmax) InitDescribe() (err error) {
 	return
 }
 
-    
-    func (self *Bitmax) Describe() []byte {
+func (self *Bitmax) Describe() []byte {
 	return []byte(`{
     "id": "bitmax",
     "name": "BitMax",
@@ -256,157 +254,6 @@ func (self *Bitmax) InitDescribe() (err error) {
         "BTCBULL": "BULL"
     }
 }`)
-	}
-	
-    func (self *Bitmax) FetchCurrencies (params map[string]interface{}) (ret interface{}) {
-    assets := self.ApiFunc("publicGetAssets", params, nil, nil)
-margin := self.ApiFunc("publicGetMarginAssets", params, nil, nil)
-cash := self.ApiFunc("publicGetCashAssets", params, nil, nil)
-assetsData := self.SafeValue(assets,"data",[]interface{}{})
-marginData := self.SafeValue(margin,"data",[]interface{}{})
-cashData := self.SafeValue(cash,"data",[]interface{}{})
-assetsById := self.IndexBy(assetsData,"assetCode")
-marginById := self.IndexBy(marginData,"assetCode")
-cashById := self.IndexBy(cashData,"assetCode")
-dataById := self.DeepExtend(assetsById,marginById,cashById)
-ids := reflect.ValueOf(query).MapKeys()
-result := map[string]interface{}{
-}
-for i := 0; i < self.Length(ids); i++ {id := self.Member(ids, i)
-currency := self.Member(dataById, id)
-code := self.SafeCurrencyCode(id)
-precision := self.SafeInteger2(currency,"precisionScale","nativeScale", 0)
-fee := self.SafeFloat2(currency,"withdrawFee","withdrawalFee", 0.0)
-status := self.SafeString2(currency,"status","statusCode", "")
-active := status == "Normal"
-margin := self.InMap("borrowAssetCode", currency)
-self.SetValue(result, code, map[string]interface{}{
-"id": id,
-"code": code,
-"info": currency,
-"type": nil,
-"margin": margin,
-"name": self.SafeString(currency,"assetName", ""),
-"active": active,
-"fee": fee,
-"precision": precision,
-"limits": map[string]interface{}{
-"amount": map[string]interface{}{
-"min": self.Member(Math, pow),
-"max": nil,
-},
-"price": map[string]interface{}{
-"min": self.Member(Math, pow),
-"max": nil,
-},
-"cost": map[string]interface{}{
-"min": nil,
-"max": nil,
-},
-"withdraw": map[string]interface{}{
-"min": self.SafeFloat(currency,"minWithdrawalAmt", 0),
-"max": nil,
-},
-},
-})}
-return result
-}
-    
-func (self *Bitmax) FetchMarkets (params map[string]interface{}) (ret interface{}) {
-    products := self.ApiFunc("publicGetProducts", params, nil, nil)
-cash := self.ApiFunc("publicGetCashProducts", params, nil, nil)
-futures := self.ApiFunc("publicGetFuturesContracts", params, nil, nil)
-productsData := self.SafeValue(products,"data",[]interface{}{})
-productsById := self.IndexBy(productsData,"symbol")
-cashData := self.SafeValue(cash,"data",[]interface{}{})
-futuresData := self.SafeValue(futures,"data",[]interface{}{})
-cashAndFuturesData := self.ArrayConcat(cashData,futuresData)
-cashAndFuturesById := self.IndexBy(cashAndFuturesData,"symbol")
-dataById := self.DeepExtend(productsById,cashAndFuturesById)
-ids := reflect.ValueOf(query).MapKeys()
-result := []interface{}{}
-for i := 0; i < self.Length(ids); i++ {id := self.Member(ids, i)
-market := self.Member(dataById, id)
-baseId := self.SafeString(market,"baseAsset", "")
-quoteId := self.SafeString(market,"quoteAsset", "")
-base := self.SafeCurrencyCode(baseId)
-quote := self.SafeCurrencyCode(quoteId)
-precision := map[string]interface{}{
-"amount": self.SafeFloat(market,"lotSize", 0),
-"price": self.SafeFloat(market,"tickSize", 0),
-}
-status := self.SafeString(market,"status", "")
-active := status == "Normal"
-typ := self.IfThenElse(self.ToBool(self.InMap("useLot", market)), "spot", "future")
-spot := typ == "spot"
-future := typ == "future"
-symbol := id
-if self.ToBool(!self.ToBool(future)) {symbol = base + "/" + quote}
-result = append(result, map[string]interface{}{
-"id": id,
-"symbol": symbol,
-"base": base,
-"quote": quote,
-"baseId": baseId,
-"quoteId": quoteId,
-"info": market,
-"type": typ,
-"spot": spot,
-"future": future,
-"active": active,
-"precision": precision,
-"limits": map[string]interface{}{
-"amount": map[string]interface{}{
-"min": self.SafeFloat(market,"minQty", 0),
-"max": self.SafeFloat(market,"maxQty", 0),
-},
-"price": map[string]interface{}{
-"min": self.SafeFloat(market,"tickSize", 0),
-"max": nil,
-},
-"cost": map[string]interface{}{
-"min": self.SafeFloat(market,"minNotional", 0),
-"max": self.SafeFloat(market,"maxNotional", 0),
-},
-},
-})}
-return result
-}
-    
-func (self *Bitmax) FetchBalance (params map[string]interface{}) (balanceResult *Account, err error) {
-    defer func() {
-		if e := recover(); e != nil {
-			err = self.PanicToError(e)
-		}
-	}()
-        self.LoadMarkets()
-self.LoadAccounts()
-defaultAccountCategory := self.SafeString(self.Options,"account-category","cash")
-options := self.SafeValue(self.Options,"fetchBalance",map[string]interface{}{
-})
-accountCategory := self.SafeString(options,"account-category",defaultAccountCategory)
-accountCategory = self.SafeString(params,"account-category",accountCategory)
-params = self.Omit(params,"account-category")
-account := self.SafeValue(self.Accounts,0,map[string]interface{}{
-})
-accountGroup := self.SafeString(account,"id", "")
-request := map[string]interface{}{
-"account-group": accountGroup,
-}
-method := "accountGroupGetCashBalance"
-if self.ToBool(accountCategory == "margin") {method = "accountGroupGetMarginBalance"} else if self.ToBool(accountCategory == "futures") {method = "accountGroupGetFuturesCollateralBalance"}
-response := self.Method(self.Extend(request,params))
-result := map[string]interface{}{
-"info": response,
-}
-balances := self.SafeValue(response,"data",[]interface{}{})
-for i := 0; i < self.Length(balances); i++ {balance := self.Member(balances, i)
-code := self.SafeCurrencyCode(self.SafeString(balance,"asset", ""))
-account := self.Account()
-self.SetValue(account, "free", self.SafeFloat(balance,"availableBalance", 0))
-self.SetValue(account, "total", self.SafeFloat(balance,"totalBalance", 0))
-self.SetValue(result, code, account)}
-return self.ParseBalance(result), nil
 }
 
 func (self *Bitmax) ParseOrderStatus(status string) string {
@@ -422,262 +269,466 @@ func (self *Bitmax) ParseOrderStatus(status string) string {
 	return ""
 }
 
-func (self *Bitmax) FetchOrderBook (symbol string, limit int64, params map[string]interface{}) (orderBook *OrderBook, err error) {
-    defer func() {
-		if e := recover(); e != nil {
-			err = self.PanicToError(e)
-		}
-	}()
-        self.LoadMarkets()
-market := self.Market(symbol)
-request := map[string]interface{}{
-"symbol": self.Member(market, "id"),
+func (self *Bitmax) FetchCurrencies(params map[string]interface{}) (ret interface{}) {
+	assets := self.ApiFunc("publicGetAssets", params, nil, nil)
+	margin := self.ApiFunc("publicGetMarginAssets", params, nil, nil)
+	cash := self.ApiFunc("publicGetCashAssets", params, nil, nil)
+	assetsData := self.SafeValue(assets, "data", []interface{}{})
+	marginData := self.SafeValue(margin, "data", []interface{}{})
+	cashData := self.SafeValue(cash, "data", []interface{}{})
+	assetsById := self.IndexBy(assetsData, "assetCode")
+	marginById := self.IndexBy(marginData, "assetCode")
+	cashById := self.IndexBy(cashData, "assetCode")
+	dataById := self.DeepExtend(assetsById, marginById, cashById)
+	ids := reflect.ValueOf(dataById).MapKeys()
+	result := map[string]interface{}{}
+	for i := 0; i < self.Length(ids); i++ {
+		id := self.Member(ids, i)
+		currency := self.Member(dataById, id)
+		code := self.SafeCurrencyCode(id)
+		precision := self.SafeInteger2(currency, "precisionScale", "nativeScale", 0)
+		fee := self.SafeFloat2(currency, "withdrawFee", "withdrawalFee", 0.0)
+		status := self.SafeString2(currency, "status", "statusCode", "")
+		active := status == "Normal"
+		margin := self.InMap("borrowAssetCode", currency)
+		self.SetValue(result, code, map[string]interface{}{
+			"id":        id,
+			"code":      code,
+			"info":      currency,
+			"type":      nil,
+			"margin":    margin,
+			"name":      self.SafeString(currency, "assetName", ""),
+			"active":    active,
+			"fee":       fee,
+			"precision": precision,
+			"limits": map[string]interface{}{
+				"amount": map[string]interface{}{
+					"min": math.Pow10(int(-precision)),
+					"max": nil,
+				},
+				"price": map[string]interface{}{
+					"min": math.Pow10(int(-precision)),
+					"max": nil,
+				},
+				"cost": map[string]interface{}{
+					"min": nil,
+					"max": nil,
+				},
+				"withdraw": map[string]interface{}{
+					"min": self.SafeFloat(currency, "minWithdrawalAmt", 0),
+					"max": nil,
+				},
+			},
+		})
+	}
+	return result
 }
-response := self.ApiFunc("publicGetDepth", self.Extend(request,params), nil, nil)
-data := self.SafeValue(response,"data",map[string]interface{}{
-})
-orderbook := self.SafeValue(data,"data",map[string]interface{}{
-})
-timestamp := self.SafeInteger(orderbook,"ts", 0)
-result := self.ParseOrderBook(orderbook,timestamp)
-self.SetValue(result, "nonce", self.SafeInteger(orderbook,"seqnum", 0))
-return result, nil
-}
-    
-func (self *Bitmax) ParseOrder (order interface{}, market interface{}) (result map[string]interface{}) {
-    status := self.ParseOrderStatus(self.SafeString(order,"status", ""))
-marketId := self.SafeString(order,"symbol", "")
-var symbol interface{}
-if self.ToBool(!self.TestNil(marketId)) {if self.ToBool(self.InMap(marketId, self.MarketsById)) {market = self.Member(self.MarketsById, marketId)} else {baseId, quoteId := self.Unpack2(strings.Split(marketId, "/"))
-base := self.SafeCurrencyCode(baseId)
-quote := self.SafeCurrencyCode(quoteId)
-symbol = base + "/" + quote}}
-if self.ToBool(self.TestNil(symbol) && !self.TestNil(market)) {symbol = self.Member(market, "symbol")}
-timestamp := self.SafeInteger2(order,"timestamp","sendingTime", 0)
-lastTradeTimestamp := self.SafeInteger(order,"lastExecTime", 0)
-price := self.SafeFloat(order,"price", 0)
-amount := self.SafeFloat(order,"orderQty", 0)
-average := self.SafeFloat(order,"avgPx", 0)
-filled := self.SafeFloat2(order,"cumFilledQty","cumQty", 0.0)
-var remaining interface{}
-if self.ToBool(!self.TestNil(filled)) {if self.ToBool(filled == 0) {timestamp = lastTradeTimestamp
-lastTradeTimestamp = nil}
-if self.ToBool(!self.TestNil(amount)) {remaining = self.Member(Math, max)}}
-var cost interface{}
-if self.ToBool(!self.TestNil(average) && !self.TestNil(filled)) {cost = average * filled}
-id := self.SafeString(order,"orderId", "")
-clientOrderId := self.SafeString(order,"id", "")
-if self.ToBool(!self.TestNil(clientOrderId)) {if self.ToBool(self.Length(clientOrderId) < 1) {clientOrderId = nil}}
-typ := self.SafeStringLower(order,"orderType", "")
-side := self.SafeStringLower(order,"side", "")
-feeCost := self.SafeFloat(order,"cumFee", 0)
-var fee interface{}
-if self.ToBool(!self.TestNil(feeCost)) {feeCurrencyId := self.SafeString(order,"feeAsset", "")
-feeCurrencyCode := self.SafeCurrencyCode(feeCurrencyId)
-fee = map[string]interface{}{
-"cost": feeCost,
-"currency": feeCurrencyCode,
-}}
-return map[string]interface{}{
-"info": order,
-"id": id,
-"clientOrderId": nil,
-"timestamp": timestamp,
-"datetime": self.Iso8601(timestamp),
-"lastTradeTimestamp": lastTradeTimestamp,
-"symbol": symbol,
-"type": typ,
-"side": side,
-"price": price,
-"amount": amount,
-"cost": cost,
-"average": average,
-"filled": filled,
-"remaining": remaining,
-"status": status,
-"fee": fee,
-"trades": nil,
-}
-}
-    
-func (self *Bitmax) CreateOrder (symbol string, typ string, side string, amount float64, price float64, params map[string]interface{}) (result *Order, err error) {
-    defer func() {
-		if e := recover(); e != nil {
-			err = self.PanicToError(e)
-		}
-	}()
-        self.LoadMarkets()
-self.LoadAccounts()
-market := self.Market(symbol)
-defaultAccountCategory := self.SafeString(self.Options,"account-category","cash")
-options := self.SafeValue(self.Options,"createOrder",map[string]interface{}{
-})
-accountCategory := self.SafeString(options,"account-category",defaultAccountCategory)
-accountCategory = self.SafeString(params,"account-category",accountCategory)
-params = self.Omit(params,"account-category")
-account := self.SafeValue(self.Accounts,0,map[string]interface{}{
-})
-accountGroup := self.SafeValue(account,"id", nil)
-clientOrderId := self.SafeString2(params,"clientOrderId","id", "")
-request := map[string]interface{}{
-"account-group": accountGroup,
-"account-category": accountCategory,
-"symbol": self.Member(market, "id"),
-"time": self.Milliseconds(),
-"orderQty": self.AmountToPrecision(symbol,amount),
-"orderType": typ,
-"side": side,
-}
-if self.ToBool(!self.TestNil(clientOrderId)) {self.SetValue(request, "id", clientOrderId)
-params = self.Omit(params,[]interface{}{"clientOrderId","id"})}
-if self.ToBool(typ == "limit" || typ == "stop_limit") {self.SetValue(request, "orderPrice", self.PriceToPrecision(symbol,price))}
-if self.ToBool(typ == "stop_limit" || typ == "stop_market") {stopPrice := self.SafeFloat(params,"stopPrice", 0)
-if self.ToBool(self.TestNil(stopPrice)) {self.RaiseException("InvalidOrder", self.Id + " createOrder requires a stopPrice parameter for " + typ + " orders")} else {self.SetValue(request, "stopPrice", self.PriceToPrecision(symbol,stopPrice))
-params = self.Omit(params,"stopPrice")}}
-response := self.AccountGroupPostAccountCategoryOrder(self.Extend(request,params))
-data := self.SafeValue(response,"data",map[string]interface{}{
-})
-info := self.SafeValue(data,"info",map[string]interface{}{
-})
-return self.ParseOrder(info,market), nil
-}
-    
-func (self *Bitmax) FetchOrder (id string, symbol string, params map[string]interface{}) (result *Order, err error) {
-    defer func() {
-		if e := recover(); e != nil {
-			err = self.PanicToError(e)
-		}
-	}()
-        self.LoadMarkets()
-self.LoadAccounts()
-defaultAccountCategory := self.SafeString(self.Options,"account-category","cash")
-options := self.SafeValue(self.Options,"fetchOrder",map[string]interface{}{
-})
-accountCategory := self.SafeString(options,"account-category",defaultAccountCategory)
-accountCategory = self.SafeString(params,"account-category",accountCategory)
-params = self.Omit(params,"account-category")
-account := self.SafeValue(self.Accounts,0,map[string]interface{}{
-})
-accountGroup := self.SafeValue(account,"id", nil)
-request := map[string]interface{}{
-"account-group": accountGroup,
-"account-category": accountCategory,
-"orderId": id,
-}
-response := self.AccountGroupGetAccountCategoryOrderStatus(self.Extend(request,params))
-data := self.SafeValue(response,"data",map[string]interface{}{
-})
-return self.ParseOrder(data), nil
-}
-    
-func (self *Bitmax) FetchOpenOrders (symbol string, since int64, limit int64, params map[string]interface{}) (result []*Order, err error) {
-    defer func() {
-		if e := recover(); e != nil {
-			err = self.PanicToError(e)
-		}
-	}()
-        self.LoadMarkets()
-self.LoadAccounts()
-var market interface{}
-if self.ToBool(!self.TestNil(symbol)) {market = self.Market(symbol)}
-defaultAccountCategory := self.SafeString(self.Options,"account-category","cash")
-options := self.SafeValue(self.Options,"fetchOpenOrders",map[string]interface{}{
-})
-accountCategory := self.SafeString(options,"account-category",defaultAccountCategory)
-accountCategory = self.SafeString(params,"account-category",accountCategory)
-params = self.Omit(params,"account-category")
-account := self.SafeValue(self.Accounts,0,map[string]interface{}{
-})
-accountGroup := self.SafeValue(account,"id", nil)
-request := map[string]interface{}{
-"account-group": accountGroup,
-"account-category": accountCategory,
-}
-response := self.AccountGroupGetAccountCategoryOrderOpen(self.Extend(request,params))
-data := self.SafeValue(response,"data",[]interface{}{})
-if self.ToBool(accountCategory == "futures") {return self.ParseOrders(data,market,since,limit)}
-orders := []interface{}{}
-for i := 0; i < self.Length(data); i++ {order := self.ParseOrder(self.Member(data, i),market)
-orders = append(orders, order)}
-return self.FilterBySymbolSinceLimit(orders,symbol,since,limit), nil
-}
-    
-func (self *Bitmax) CancelOrder (id string, symbol string, params map[string]interface{}) (response interface{}, err error) {
-    defer func() {
-		if e := recover(); e != nil {
-			err = self.PanicToError(e)
-		}
-	}()
-        if self.ToBool(self.TestNil(symbol)) {self.RaiseException("ArgumentsRequired", self.Id + " cancelOrder requires a symbol argument")}
-self.LoadMarkets()
-self.LoadAccounts()
-market := self.Market(symbol)
-defaultAccountCategory := self.SafeString(self.Options,"account-category","cash")
-options := self.SafeValue(self.Options,"cancelOrder",map[string]interface{}{
-})
-accountCategory := self.SafeString(options,"account-category",defaultAccountCategory)
-accountCategory = self.SafeString(params,"account-category",accountCategory)
-params = self.Omit(params,"account-category")
-account := self.SafeValue(self.Accounts,0,map[string]interface{}{
-})
-accountGroup := self.SafeValue(account,"id", nil)
-clientOrderId := self.SafeString2(params,"clientOrderId","id", "")
-request := map[string]interface{}{
-"account-group": accountGroup,
-"account-category": accountCategory,
-"symbol": self.Member(market, "id"),
-"time": self.Milliseconds(),
-"id": "foobar",
-}
-if self.ToBool(self.TestNil(clientOrderId)) {self.SetValue(request, "orderId", id)} else {self.SetValue(request, "id", clientOrderId)
-params = self.Omit(params,[]interface{}{"clientOrderId","id"})}
-response = self.AccountGroupDeleteAccountCategoryOrder(self.Extend(request,params))
-data := self.SafeValue(response,"data",map[string]interface{}{
-})
-info := self.SafeValue(data,"info",map[string]interface{}{
-})
-return self.ParseOrder(info,market), nil
-}
-    
-func (self *Bitmax) Sign (path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (ret interface{}) {
-    url := ""
-query := params
-if self.ToBool(api == "accountGroup") {url += self.ImplodeParams("/{account-group}",params)
-query = self.Omit(params,"account-group")}
-request := self.ImplodeParams(path,query)
-url += "/api/pro/" + self.Version + "/" + request
-query = self.Omit(query,self.ExtractParams(path))
-if self.ToBool(api == "public") {if self.ToBool(self.Length(reflect.ValueOf(query).MapKeys())) {url += "?" + self.Urlencode(query)}} else {self.CheckRequiredCredentials()
-timestamp := fmt.Sprintf("%v", self.Milliseconds())
-auth := timestamp + "+" + request
-signature := self.Hmac(self.Encode(auth),self.Encode(self.Secret),"sha256","base64")
-headers = map[string]interface{}{
-"x-auth-key": self.ApiKey,
-"x-auth-timestamp": timestamp,
-"x-auth-signature": self.Decode(signature),
-}
-if self.ToBool(method == "GET") {if self.ToBool(self.Length(reflect.ValueOf(query).MapKeys())) {url += "?" + self.Urlencode(query)}} else {self.SetValue(headers, "Content-Type", "application/json")
-body = self.Json(query)}}
-url = self.Member(self.Urls, "api") + url
-return map[string]interface{}{
-"url": url,
-"method": method,
-"body": body,
-"headers": headers,
-}
-}
-    
-func (self *Bitmax) HandleErrors (httpCode int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}) () {
-    if self.ToBool(self.TestNil(response)) {return}
-code := self.SafeString(response,"code", "")
-message := self.SafeString(response,"message", "")
-error := !self.TestNil(code) && code != "0"
-if self.ToBool(error || !self.TestNil(message)) {feedback := self.Id + " " + body
-self.ThrowExactlyMatchedException(self.Member(self.Exceptions, "exact"),code,feedback)
-self.ThrowExactlyMatchedException(self.Member(self.Exceptions, "exact"),message,feedback)
-self.ThrowBroadlyMatchedException(self.Member(self.Exceptions, "broad"),message,feedback)
-self.RaiseException("ExchangeError", feedback)}
-}
-    
 
-    
+func (self *Bitmax) FetchMarkets(params map[string]interface{}) (ret interface{}) {
+	products := self.ApiFunc("publicGetProducts", params, nil, nil)
+	cash := self.ApiFunc("publicGetCashProducts", params, nil, nil)
+	futures := self.ApiFunc("publicGetFuturesContracts", params, nil, nil)
+	productsData := self.SafeValue(products, "data", []interface{}{})
+	productsById := self.IndexBy(productsData, "symbol")
+	cashData := self.SafeValue(cash, "data", []interface{}{})
+	futuresData := self.SafeValue(futures, "data", []interface{}{})
+	cashAndFuturesData := self.ArrayConcat(cashData, futuresData)
+	cashAndFuturesById := self.IndexBy(cashAndFuturesData, "symbol")
+	dataById := self.DeepExtend(productsById, cashAndFuturesById)
+	ids := reflect.ValueOf(dataById).MapKeys()
+	result := []interface{}{}
+	for i := 0; i < self.Length(ids); i++ {
+		id := self.Member(ids, i)
+		market := self.Member(dataById, id)
+		baseId := self.SafeString(market, "baseAsset", "")
+		quoteId := self.SafeString(market, "quoteAsset", "")
+		base := self.SafeCurrencyCode(baseId)
+		quote := self.SafeCurrencyCode(quoteId)
+		precision := map[string]interface{}{
+			"amount": self.SafeFloat(market, "lotSize", 0),
+			"price":  self.SafeFloat(market, "tickSize", 0),
+		}
+		status := self.SafeString(market, "status", "")
+		active := status == "Normal"
+		typ := self.IfThenElse(self.ToBool(self.InMap("useLot", market)), "spot", "future")
+		spot := typ == "spot"
+		future := typ == "future"
+		symbol := id
+		if self.ToBool(!self.ToBool(future)) {
+			symbol = base + "/" + quote
+		}
+		result = append(result, map[string]interface{}{
+			"id":        id,
+			"symbol":    symbol,
+			"base":      base,
+			"quote":     quote,
+			"baseId":    baseId,
+			"quoteId":   quoteId,
+			"info":      market,
+			"type":      typ,
+			"spot":      spot,
+			"future":    future,
+			"active":    active,
+			"precision": precision,
+			"limits": map[string]interface{}{
+				"amount": map[string]interface{}{
+					"min": self.SafeFloat(market, "minQty", 0),
+					"max": self.SafeFloat(market, "maxQty", 0),
+				},
+				"price": map[string]interface{}{
+					"min": self.SafeFloat(market, "tickSize", 0),
+					"max": nil,
+				},
+				"cost": map[string]interface{}{
+					"min": self.SafeFloat(market, "minNotional", 0),
+					"max": self.SafeFloat(market, "maxNotional", 0),
+				},
+			},
+		})
+	}
+	return result
+}
+
+func (self *Bitmax) FetchBalance(params map[string]interface{}) (balanceResult *Account, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	self.LoadMarkets()
+	self.LoadAccounts()
+	defaultAccountCategory := self.SafeString(self.Options, "account-category", "cash")
+	options := self.SafeValue(self.Options, "fetchBalance", map[string]interface{}{})
+	accountCategory := self.SafeString(options, "account-category", defaultAccountCategory)
+	accountCategory = self.SafeString(params, "account-category", accountCategory)
+	params = self.Omit(params, "account-category")
+	account := self.SafeValue(self.Accounts, 0, map[string]interface{}{})
+	accountGroup := self.SafeString(account, "id", "")
+	request := map[string]interface{}{
+		"account-group": accountGroup,
+	}
+	method := "accountGroupGetCashBalance"
+	if self.ToBool(accountCategory == "margin") {
+		method = "accountGroupGetMarginBalance"
+	} else if self.ToBool(accountCategory == "futures") {
+		method = "accountGroupGetFuturesCollateralBalance"
+	}
+	response := self.ApiFunc(method, self.Extend(request, params), nil, nil)
+	result := map[string]interface{}{
+		"info": response,
+	}
+	balances := self.SafeValue(response, "data", []interface{}{})
+	for i := 0; i < self.Length(balances); i++ {
+		balance := self.Member(balances, i)
+		code := self.SafeCurrencyCode(self.SafeString(balance, "asset", ""))
+		account := self.Account()
+		self.SetValue(account, "free", self.SafeFloat(balance, "availableBalance", 0))
+		self.SetValue(account, "total", self.SafeFloat(balance, "totalBalance", 0))
+		self.SetValue(result, code, account)
+	}
+	return self.ParseBalance(result), nil
+}
+
+func (self *Bitmax) FetchOrderBook(symbol string, limit int64, params map[string]interface{}) (orderBook *OrderBook, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	self.LoadMarkets()
+	market := self.Market(symbol)
+	request := map[string]interface{}{
+		"symbol": self.Member(market, "id"),
+	}
+	response := self.ApiFunc("publicGetDepth", self.Extend(request, params), nil, nil)
+	data := self.SafeValue(response, "data", map[string]interface{}{})
+	orderbook := self.SafeValue(data, "data", map[string]interface{}{})
+	timestamp := self.SafeInteger(orderbook, "ts", 0)
+	result := self.ParseOrderBook(orderbook, timestamp, "bids", "asks", 0, 1)
+	self.SetValue(result, "nonce", self.SafeInteger(orderbook, "seqnum", 0))
+	return result, nil
+}
+
+func (self *Bitmax) ParseOrder(order interface{}, market interface{}) (result map[string]interface{}) {
+	status := self.ParseOrderStatus(self.SafeString(order, "status", ""))
+	marketId := self.SafeString(order, "symbol", "")
+	var symbol interface{}
+	if self.ToBool(!self.TestNil(marketId)) {
+		if self.ToBool(self.InMap(marketId, self.MarketsById)) {
+			market = self.Member(self.MarketsById, marketId)
+		} else {
+			baseId, quoteId := self.Unpack2(strings.Split(marketId, "/"))
+			base := self.SafeCurrencyCode(baseId)
+			quote := self.SafeCurrencyCode(quoteId)
+			symbol = base + "/" + quote
+		}
+	}
+	if self.ToBool(self.TestNil(symbol) && !self.TestNil(market)) {
+		symbol = self.Member(market, "symbol")
+	}
+	timestamp := self.SafeInteger2(order, "timestamp", "sendingTime", 0)
+	lastTradeTimestamp := self.SafeInteger(order, "lastExecTime", 0)
+	price := self.SafeFloat(order, "price", 0)
+	amount := self.SafeFloat(order, "orderQty", 0)
+	average := self.SafeFloat(order, "avgPx", 0)
+	filled := self.SafeFloat2(order, "cumFilledQty", "cumQty", 0.0)
+	var remaining interface{}
+	if self.ToBool(!self.TestNil(filled)) {
+		if self.ToBool(filled == 0) {
+			timestamp = lastTradeTimestamp
+			lastTradeTimestamp = 0
+		}
+		if self.ToBool(!self.TestNil(amount)) {
+			remaining = math.Max(0, amount-filled)
+		}
+	}
+	var cost interface{}
+	if self.ToBool(!self.TestNil(average) && !self.TestNil(filled)) {
+		cost = average * filled
+	}
+	id := self.SafeString(order, "orderId", "")
+	clientOrderId := self.SafeString(order, "id", "")
+	if self.ToBool(!self.TestNil(clientOrderId)) {
+		if self.ToBool(self.Length(clientOrderId) < 1) {
+			clientOrderId = ""
+		}
+	}
+	typ := self.SafeStringLower(order, "orderType", "")
+	side := self.SafeStringLower(order, "side", "")
+	feeCost := self.SafeFloat(order, "cumFee", 0)
+	var fee interface{}
+	if self.ToBool(!self.TestNil(feeCost)) {
+		feeCurrencyId := self.SafeString(order, "feeAsset", "")
+		feeCurrencyCode := self.SafeCurrencyCode(feeCurrencyId)
+		fee = map[string]interface{}{
+			"cost":     feeCost,
+			"currency": feeCurrencyCode,
+		}
+	}
+	return map[string]interface{}{
+		"info":               order,
+		"id":                 id,
+		"clientOrderId":      nil,
+		"timestamp":          timestamp,
+		"datetime":           self.Iso8601(timestamp),
+		"lastTradeTimestamp": lastTradeTimestamp,
+		"symbol":             symbol,
+		"type":               typ,
+		"side":               side,
+		"price":              price,
+		"amount":             amount,
+		"cost":               cost,
+		"average":            average,
+		"filled":             filled,
+		"remaining":          remaining,
+		"status":             status,
+		"fee":                fee,
+		"trades":             nil,
+	}
+}
+
+func (self *Bitmax) CreateOrder(symbol string, typ string, side string, amount float64, price float64, params map[string]interface{}) (result *Order, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	self.LoadMarkets()
+	self.LoadAccounts()
+	market := self.Market(symbol)
+	defaultAccountCategory := self.SafeString(self.Options, "account-category", "cash")
+	options := self.SafeValue(self.Options, "createOrder", map[string]interface{}{})
+	accountCategory := self.SafeString(options, "account-category", defaultAccountCategory)
+	accountCategory = self.SafeString(params, "account-category", accountCategory)
+	params = self.Omit(params, "account-category")
+	account := self.SafeValue(self.Accounts, 0, map[string]interface{}{})
+	accountGroup := self.SafeValue(account, "id", nil)
+	clientOrderId := self.SafeString2(params, "clientOrderId", "id", "")
+	request := map[string]interface{}{
+		"account-group":    accountGroup,
+		"account-category": accountCategory,
+		"symbol":           self.Member(market, "id"),
+		"time":             self.Milliseconds(),
+		"orderQty":         self.AmountToPrecision(symbol, amount),
+		"orderType":        typ,
+		"side":             side,
+	}
+	if self.ToBool(!self.TestNil(clientOrderId)) {
+		self.SetValue(request, "id", clientOrderId)
+		params = self.Omit(params, []interface{}{"clientOrderId", "id"})
+	}
+	if self.ToBool(typ == "limit" || typ == "stop_limit") {
+		self.SetValue(request, "orderPrice", self.PriceToPrecision(symbol, price))
+	}
+	if self.ToBool(typ == "stop_limit" || typ == "stop_market") {
+		stopPrice := self.SafeFloat(params, "stopPrice", 0)
+		if self.ToBool(self.TestNil(stopPrice)) {
+			self.RaiseException("InvalidOrder", self.Id+" createOrder requires a stopPrice parameter for "+typ+" orders")
+		} else {
+			self.SetValue(request, "stopPrice", self.PriceToPrecision(symbol, stopPrice))
+			params = self.Omit(params, "stopPrice")
+		}
+	}
+	response := self.ApiFunc("accountGroupPostAccountCategoryOrder", self.Extend(request, params), nil, nil)
+	data := self.SafeValue(response, "data", map[string]interface{}{})
+	info := self.SafeValue(data, "info", map[string]interface{}{})
+	return self.ToOrder(self.ParseOrder(info, market)), nil
+}
+
+func (self *Bitmax) FetchOrder(id string, symbol string, params map[string]interface{}) (result *Order, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	self.LoadMarkets()
+	self.LoadAccounts()
+	defaultAccountCategory := self.SafeString(self.Options, "account-category", "cash")
+	options := self.SafeValue(self.Options, "fetchOrder", map[string]interface{}{})
+	accountCategory := self.SafeString(options, "account-category", defaultAccountCategory)
+	accountCategory = self.SafeString(params, "account-category", accountCategory)
+	params = self.Omit(params, "account-category")
+	account := self.SafeValue(self.Accounts, 0, map[string]interface{}{})
+	accountGroup := self.SafeValue(account, "id", nil)
+	request := map[string]interface{}{
+		"account-group":    accountGroup,
+		"account-category": accountCategory,
+		"orderId":          id,
+	}
+	response := self.ApiFunc("accountGroupGetAccountCategoryOrderStatus", self.Extend(request, params), nil, nil)
+	data := self.SafeValue(response, "data", map[string]interface{}{})
+	return self.ToOrder(self.ParseOrder(data, nil)), nil
+}
+
+func (self *Bitmax) FetchOpenOrders(symbol string, since int64, limit int64, params map[string]interface{}) (result []*Order, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	self.LoadMarkets()
+	self.LoadAccounts()
+	var market interface{}
+	if self.ToBool(!self.TestNil(symbol)) {
+		market = self.Market(symbol)
+	}
+	defaultAccountCategory := self.SafeString(self.Options, "account-category", "cash")
+	options := self.SafeValue(self.Options, "fetchOpenOrders", map[string]interface{}{})
+	accountCategory := self.SafeString(options, "account-category", defaultAccountCategory)
+	accountCategory = self.SafeString(params, "account-category", accountCategory)
+	params = self.Omit(params, "account-category")
+	account := self.SafeValue(self.Accounts, 0, map[string]interface{}{})
+	accountGroup := self.SafeValue(account, "id", nil)
+	request := map[string]interface{}{
+		"account-group":    accountGroup,
+		"account-category": accountCategory,
+	}
+	response := self.ApiFunc("accountGroupGetAccountCategoryOrderOpen", self.Extend(request, params), nil, nil)
+	data := self.SafeValue(response, "data", []interface{}{})
+	if self.ToBool(accountCategory == "futures") {
+		return self.ToOrders(self.ParseOrders(data, market, since, limit)), nil
+	}
+	orders := []interface{}{}
+	for i := 0; i < self.Length(data); i++ {
+		order := self.ParseOrder(self.Member(data, i), market)
+		orders = append(orders, order)
+	}
+	return self.ToOrders(self.FilterBySymbolSinceLimit(orders, symbol, since, limit)), nil
+}
+
+func (self *Bitmax) CancelOrder(id string, symbol string, params map[string]interface{}) (response interface{}, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	if self.ToBool(self.TestNil(symbol)) {
+		self.RaiseException("ArgumentsRequired", self.Id+" cancelOrder requires a symbol argument")
+	}
+	self.LoadMarkets()
+	self.LoadAccounts()
+	market := self.Market(symbol)
+	defaultAccountCategory := self.SafeString(self.Options, "account-category", "cash")
+	options := self.SafeValue(self.Options, "cancelOrder", map[string]interface{}{})
+	accountCategory := self.SafeString(options, "account-category", defaultAccountCategory)
+	accountCategory = self.SafeString(params, "account-category", accountCategory)
+	params = self.Omit(params, "account-category")
+	account := self.SafeValue(self.Accounts, 0, map[string]interface{}{})
+	accountGroup := self.SafeValue(account, "id", nil)
+	clientOrderId := self.SafeString2(params, "clientOrderId", "id", "")
+	request := map[string]interface{}{
+		"account-group":    accountGroup,
+		"account-category": accountCategory,
+		"symbol":           self.Member(market, "id"),
+		"time":             self.Milliseconds(),
+		"id":               "foobar",
+	}
+	if self.ToBool(self.TestNil(clientOrderId)) {
+		self.SetValue(request, "orderId", id)
+	} else {
+		self.SetValue(request, "id", clientOrderId)
+		params = self.Omit(params, []interface{}{"clientOrderId", "id"})
+	}
+	response = self.ApiFunc("accountGroupDeleteAccountCategoryOrder", self.Extend(request, params), nil, nil)
+	data := self.SafeValue(response, "data", map[string]interface{}{})
+	info := self.SafeValue(data, "info", map[string]interface{}{})
+	return self.ParseOrder(info, market), nil
+}
+
+func (self *Bitmax) Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (ret interface{}) {
+	url := ""
+	query := params
+	if self.ToBool(api == "accountGroup") {
+		url += self.ImplodeParams("/{account-group}", params)
+		query = self.Omit(params, "account-group")
+	}
+	request := self.ImplodeParams(path, query)
+	url += "/api/pro/" + self.Version + "/" + request
+	query = self.Omit(query, self.ExtractParams(path))
+	if self.ToBool(api == "public") {
+		if self.ToBool(self.Length(reflect.ValueOf(query).MapKeys())) {
+			url += "?" + self.Urlencode(query)
+		}
+	} else {
+		self.CheckRequiredCredentials()
+		timestamp := fmt.Sprintf("%v", self.Milliseconds())
+		auth := timestamp + "+" + request
+		signature := self.Hmac(self.Encode(auth), self.Encode(self.Secret), "sha256", "base64")
+		headers = map[string]interface{}{
+			"x-auth-key":       self.ApiKey,
+			"x-auth-timestamp": timestamp,
+			"x-auth-signature": self.Decode(signature),
+		}
+		if self.ToBool(method == "GET") {
+			if self.ToBool(self.Length(reflect.ValueOf(query).MapKeys())) {
+				url += "?" + self.Urlencode(query)
+			}
+		} else {
+			self.SetValue(headers, "Content-Type", "application/json")
+			body = self.Json(query)
+		}
+	}
+	url = self.Urls["api"].(string) + url
+	return map[string]interface{}{
+		"url":     url,
+		"method":  method,
+		"body":    body,
+		"headers": headers,
+	}
+}
+
+func (self *Bitmax) HandleErrors(httpCode int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}) {
+	if self.ToBool(self.TestNil(response)) {
+		return
+	}
+	code := self.SafeString(response, "code", "")
+	message := self.SafeString(response, "message", "")
+	error := !self.TestNil(code) && code != "0"
+	if self.ToBool(error || !self.TestNil(message)) {
+		feedback := self.Id + " " + body
+		self.ThrowExactlyMatchedException(self.Member(self.Exceptions, "exact"), code, feedback)
+		self.ThrowExactlyMatchedException(self.Member(self.Exceptions, "exact"), message, feedback)
+		self.ThrowBroadlyMatchedException(self.Member(self.Exceptions, "broad"), message, feedback)
+		self.RaiseException("ExchangeError", feedback)
+	}
+}
