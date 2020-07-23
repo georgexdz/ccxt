@@ -7,6 +7,9 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"github.com/imdario/mergo"
+	"github.com/thoas/go-funk"
+
 	//"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
@@ -591,7 +594,7 @@ type Exchange struct {
 
 	Child          ExchangeInterfaceInternal
 	ApiDecodeInfo  map[string]*ApiDecode
-	ApiUrls        map[string]string
+	//ApiUrls        map[string]string
 	DescribeMap    map[string]interface{}
 	Options        map[string]interface{}
 	httpExceptions map[string]string
@@ -1404,10 +1407,9 @@ func (self *Exchange) SafeEither(d interface{}, key1 string, key2 string, defaul
 
 func (self *Exchange) SafeString(d interface{}, key string, defaultVal interface{}) string {
 	if d, ok := d.(map[string]interface{}); ok {
-		if val, ok := d[key]; ok {
-			if strVal, ok := val.(string); ok {
-				return strVal
-			}
+		val := d[key]
+		if val != nil {
+			return fmt.Sprintf("%v", val)
 		}
 	}
 	return defaultVal.(string)
@@ -1794,9 +1796,11 @@ func (self *Exchange) ToOrder(order interface{}) (result *Order) {
 }
 
 func (self *Exchange) ToOrders(orders interface{}) (result []*Order) {
-	for _, o := range orders.([]map[string]interface{}) {
-		order := (&Order{}).InitFromMap(o)
-		result = append(result, order)
+	for _, one := range orders.([]interface{}) {
+		if o, ok := one.(map[string]interface{}); ok {
+			order := (&Order{}).InitFromMap(o)
+			result = append(result, order)
+		}
 	}
 	return
 }
@@ -1938,14 +1942,20 @@ func (self *Exchange) Float64ToString(f float64) string {
 }
 
 // 如果是 map 就使用值转为 slice
-// FIXME: 需要对map的key排序一下
 func (self *Exchange) Values(x interface{}) []interface{} {
 	if v, ok := x.([]interface{}); ok {
 		return v
 	} else if v, ok := x.(map[string]interface{}); ok {
 		out := make([]interface{}, 0, len(v))
-		for _, vv := range v {
-			out = append(out, vv)
+		keys := make([]string, 0, len(v))
+
+		for k, _ := range v {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, k := range keys {
+			out = append(out, v[k])
 		}
 		return out
 	}
@@ -1999,48 +2009,50 @@ func (self *Exchange) ToArray(o interface{}) (result []interface{}) {
 }
 
 func (self* Exchange) ArrayConcat(a interface{}, b interface{}) (result []interface{}) {
-	return append(a.([]interface{}), b.([]interface{}))
+	return append(a.([]interface{}), b.([]interface{})...)
 }
 
-/*
-func (self *Exchange) FilterBySymbolSinceLimit(arr interface{}, field string, value string, since int64, limit int64, key string, tail) (result []interface{}) {
+func (self *Exchange) FilterByValueSinceLimit(arr []interface{}, field string, value interface{}, since interface{}, limit interface{}, key string, tail bool) (result []interface{}) {
+	defer func() {
+		if e := recover(); e != nil {
+			fmt.Println(fmt.Sprintf("filter_by_symbol_since_limit err: %v, arr: %v", e, arr))
+		}
+	}()
+
 	result = self.ToArray(arr)
 
-	if value != "" {
-		tmp := []interface{}{}
-		for _, one := range result {
-			if entry, ok := one.(map[string]interface{}); ok {
-				if entry[field] == value {
-					tmp = append(tmp, entry)
-				}
-			}
-		}
-		result = tmp
-	}
-	if since != 0 {
-		tmp := []interface{}{}
-		for _, one := range result {
-			if entry, ok := one.(map[string]interface{}); ok {
-				if entry[field] >= since {
-					tmp = append(tmp, entry)
-				}
-			}
-		}
-		result = tmp
+	if value != nil {
+		result = funk.Filter(result, func(x interface{}) bool {
+			return x.(map[string]interface{})[field] == value
+		}).([]interface{})
 	}
 
+	if since != nil {
+		result = funk.Filter(result, func(x interface{}) bool {
+			return x.(map[string]interface{})[key].(int) >= since.(int)
+		}).([]interface{})
+	}
+
+	if limit != nil {
+		limitNum := limit.(int)
+		if tail && since != nil {
+			result = result[len(result)-limitNum:]
+		} else {
+			result = result[:limitNum]
+		}
+	}
+	return
 }
-    def filter_by_value_since_limit(self, array, field, value=None, since=None, limit=None, key='timestamp', tail=False):
-        array = self.to_array(array)
-        if value is not None:
-            array = [entry for entry in array if entry[field] == value]
-        if since is not None:
-            array = [entry for entry in array if entry[key] >= since]
-        if limit is not None:
-            array = array[-limit:] if tail and (since is None) else array[:limit]
-        return array
+func (self* Exchange) FilterBySymbolSinceLimit(arr []interface{}, symbol interface{}, since interface{}, limit interface{}) (result []interface{}) {
+	return self.FilterByValueSinceLimit(arr, "symbol", symbol, since, limit, "", false)
+}
 
-    def filter_by_symbol_since_limit(self, array, symbol=None, since=None, limit=None):
-        return self.filter_by_value_since_limit(array, 'symbol', symbol, since, limit)
-
- */
+func (self* Exchange) DeepExtend(args ...interface{}) (result map[string]interface{}) {
+	for _, arg := range args {
+		err := mergo.Merge(&result, arg, mergo.WithOverride)
+		if err != nil {
+			self.RaiseInternalException(fmt.Sprintf("deepExtend err:%v, args:%v", err, args))
+		}
+	}
+	return
+}

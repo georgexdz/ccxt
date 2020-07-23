@@ -2,6 +2,7 @@ package kucoin
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"testing"
@@ -13,20 +14,30 @@ func init() {
 
 // api.json 需要放到和此文件同一目录
 func loadApiKey(ex *Kucoin) {
-	plan, err := ioutil.ReadFile("api.json")
+	plan, err := ioutil.ReadFile("test_config.json")
 	if err != nil {
 		return
 	}
 
-	var data map[string]interface{}
+	var data interface{}
 	err = json.Unmarshal(plan, &data)
 	if err != nil {
 		return
 	}
 
-	ex.ApiKey = data["apiKey"].(string)
-	ex.Secret = data["secret"].(string)
-	ex.Password = data["password"].(string)
+	fmt.Println(data)
+
+	if json_config, ok := data.(map[string]interface{}); ok {
+        ex.Urls = map[string]interface{}{
+        	"api": map[string]interface{}{
+        		"public": json_config["url"],
+        		"private": json_config["url"],
+			},
+        }
+		ex.ApiKey = json_config["key"].(string)
+		ex.Secret = json_config["secret"].(string)
+		ex.Password = json_config["password"].(string)
+	}
 }
 
 func TestFetchOrderBook(t *testing.T) {

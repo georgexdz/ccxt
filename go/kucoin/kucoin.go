@@ -36,19 +36,6 @@ func (self *Kucoin) InitDescribe() (err error) {
 		return
 	}
 
-	publicUrl, err := NestedMapLookup(self.DescribeMap, "urls", "api", "public")
-	if err != nil {
-		return
-	}
-	privateUrl, err := NestedMapLookup(self.DescribeMap, "urls", "api", "private")
-	if err != nil {
-		return
-	}
-	self.ApiUrls = map[string]string{
-		"private": privateUrl.(string),
-		"public":  publicUrl.(string),
-	}
-
 	self.Options = self.DescribeMap["options"].(map[string]interface{})
 	self.Urls = self.DescribeMap["urls"].(map[string]interface{})
 	self.Exceptions = self.DescribeMap["exceptions"].(map[string]interface{})

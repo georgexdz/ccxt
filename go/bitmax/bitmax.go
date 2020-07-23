@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	. "github.com/georgexdz/ccxt/go/base"
+	"github.com/thoas/go-funk"
 	"math"
 	"reflect"
 	"strings"
@@ -37,21 +38,9 @@ func (self *Bitmax) InitDescribe() (err error) {
 		return
 	}
 
-	publicUrl, err := NestedMapLookup(self.DescribeMap, "urls", "api", "public")
-	if err != nil {
-		return
-	}
-	privateUrl, err := NestedMapLookup(self.DescribeMap, "urls", "api", "private")
-	if err != nil {
-		return
-	}
-	self.ApiUrls = map[string]string{
-		"private": privateUrl.(string),
-		"public":  publicUrl.(string),
-	}
-
 	self.Options = self.DescribeMap["options"].(map[string]interface{})
 	self.Urls = self.DescribeMap["urls"].(map[string]interface{})
+	self.Version = self.DescribeMap["version"].(string)
 	return
 }
 
@@ -264,9 +253,8 @@ func (self *Bitmax) ParseOrderStatus(status string) string {
 	case "Filled": return "closed"
 	case "Canceled": return "canceled"
 	case "Rejected": return "rejected"
-	default: self.RaiseInternalException("invalid order status: " + status)
 	}
-	return ""
+	return status
 }
 
 func (self *Bitmax) FetchCurrencies(params map[string]interface{}) (ret interface{}) {
@@ -335,10 +323,12 @@ func (self *Bitmax) FetchMarkets(params map[string]interface{}) (ret interface{}
 	cashAndFuturesData := self.ArrayConcat(cashData, futuresData)
 	cashAndFuturesById := self.IndexBy(cashAndFuturesData, "symbol")
 	dataById := self.DeepExtend(productsById, cashAndFuturesById)
-	ids := reflect.ValueOf(dataById).MapKeys()
+	// ids := reflect.ValueOf(dataById).MapKeys()
+	ids := funk.Keys(dataById)
 	result := []interface{}{}
 	for i := 0; i < self.Length(ids); i++ {
 		id := self.Member(ids, i)
+		// fmt.Println(ids)
 		market := self.Member(dataById, id)
 		baseId := self.SafeString(market, "baseAsset", "")
 		quoteId := self.SafeString(market, "quoteAsset", "")
@@ -387,6 +377,23 @@ func (self *Bitmax) FetchMarkets(params map[string]interface{}) (ret interface{}
 		})
 	}
 	return result
+}
+
+func (self *Bitmax) FetchAccounts(params map[string]interface{}) []interface{} {
+	accountGroup := self.SafeString(self.Options, "account-group", "")
+	var response interface{}
+	if self.ToBool(self.TestNil(accountGroup)) {
+		response = self.ApiFunc("privateGetInfo", params, nil, nil)
+		data := self.SafeValue(response, "data", map[string]interface{}{})
+		accountGroup = self.SafeString(data, "accountGroup", "")
+		self.SetValue(self.Options, "account-group", accountGroup)
+	}
+	return []interface{}{map[string]interface{}{
+		"id":       accountGroup,
+		"type":     nil,
+		"currency": nil,
+		"info":     response,
+	}}
 }
 
 func (self *Bitmax) FetchBalance(params map[string]interface{}) (balanceResult *Account, err error) {
@@ -547,7 +554,7 @@ func (self *Bitmax) CreateOrder(symbol string, typ string, side string, amount f
 	request := map[string]interface{}{
 		"account-group":    accountGroup,
 		"account-category": accountCategory,
-		"symbol":           self.Member(market, "id"),
+		"symbol":           market.Id,
 		"time":             self.Milliseconds(),
 		"orderQty":         self.AmountToPrecision(symbol, amount),
 		"orderType":        typ,
@@ -659,7 +666,9 @@ func (self *Bitmax) CancelOrder(id string, symbol string, params map[string]inte
 	request := map[string]interface{}{
 		"account-group":    accountGroup,
 		"account-category": accountCategory,
-		"symbol":           self.Member(market, "id"),
+		// TODO
+		// "symbol":           self.Member(market, "id"),
+		"symbol":           market.Id,
 		"time":             self.Milliseconds(),
 		"id":               "foobar",
 	}

@@ -14,6 +14,7 @@ import json
 
 
 EX_NAME = 'Kucoin'
+CODE_INFO = {}
 
 
 def get_ex_list():
@@ -59,7 +60,7 @@ FUNC_LIST = [
     'sign', 'fetchOrderBook', 'fetchOpenOrders', 'cancelOrder',
     'createOrder', 'fetchOrder', 'parseOrder', 'fetchBalance',
     'fetchOrdersByStatus', 'fetchOrdersByState', 'fetchMarkets',
-    'fetchCurrencies', 'handleErrors'
+    'fetchCurrencies', 'handleErrors', 'fetchAccounts'
 ]
 JS_PATCH_FOR_GOLAGNG_TRANSLATE = {
     'kucoin': {
@@ -150,6 +151,7 @@ FUNC_ARG_MAP = {
     'fetchMarkets': 'params map[string]interface{}',
     'fetchCurrencies': 'params map[string]interface{}',
     'handleErrors': 'httpCode int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}',
+    'fetchAccounts': 'params map[string]interface{}',
 }
 RETURN_MAP = {
     'createOrder': 'result *Order, err error',
@@ -165,6 +167,7 @@ RETURN_MAP = {
     'fetchMarkets': 'ret interface{}',
     'fetchCurrencies': 'ret interface{}',
     'handleErrors': '',
+    'fetchAccounts': '[]interface{}',
 }
 PANIC_DEAL_FUNC = [o.lower() for o in [
     'fetchOrderBook', 'fetchOpenOrders', 'cancelOrder',
@@ -253,14 +256,16 @@ def CallExpression(syntax, info={}):
 
     if syntax.callee.type == 'MemberExpression' and syntax.callee.object.type == 'Identifier' and syntax.callee.object.name == 'Object':
         if syntax.callee.property.name == 'keys':
-            return 'reflect.ValueOf(query).MapKeys()'
+            return f'reflect.ValueOf({call_func_by_syntax(syntax.arguments[0])}).MapKeys()'
 
     # toString -> fmt.Sprintf
     if '(' in pre_part and ')' in pre_part:
         return pre_part
 
     call_str = pre_part
-    if re.findall(r'self\.(Private|Public)', call_str):
+    api_func_keys = [capital_first(o) for o in CODE_INFO['describe']['api'].keys()]
+    api_func_pattern = f"self\.({'|'.join(api_func_keys)})"
+    if re.findall(api_func_pattern, call_str):
         info1 = DEFAULT_FUNC_ARGS['apifunc']
         arg_str += f', {info1[1]}' * (info1[0] - len(syntax.arguments) - 1)
         return f'self.ApiFunc("{syntax.callee.property.name}", {arg_str})'
@@ -576,7 +581,9 @@ def format_funcs(func_info_map):
 
 
 def format_ex_code(ex):
+    global CODE_INFO
     info = read_code_str(ex)
+    CODE_INFO = info
 
     return f'''
     {format_header()}
