@@ -511,7 +511,6 @@ def format_header():
     package {EX_NAME.lower()}
 
 import (
-	"encoding/json"
 	"fmt"
 	. "github.com/georgexdz/ccxt/go/base"
 	"reflect"
@@ -535,34 +534,6 @@ func New(config *ExchangeConfig) (ex *{EX_NAME}, err error) {{
 	return
 }}
 
-func (self *{EX_NAME}) InitDescribe() (err error) {{
-	err = json.Unmarshal(self.Child.Describe(), &self.DescribeMap)
-	if err != nil {{
-		return
-	}}
-
-	err = self.DefineRestApi()
-	if err != nil {{
-		return
-	}}
-
-	publicUrl, err := NestedMapLookup(self.DescribeMap, "urls", "api", "public")
-	if err != nil {{
-		return
-	}}
-	privateUrl, err := NestedMapLookup(self.DescribeMap, "urls", "api", "private")
-	if err != nil {{
-		return
-	}}
-	self.ApiUrls = map[string]string{{
-		"private": privateUrl.(string),
-		"public":  publicUrl.(string),
-	}}
-
-	self.Options = self.DescribeMap["options"].(map[string]interface{{}})
-	self.Urls = self.DescribeMap["urls"].(map[string]interface{{}})
-	return
-}}
 '''
 
 

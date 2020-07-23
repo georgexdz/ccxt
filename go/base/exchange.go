@@ -2029,14 +2029,18 @@ func (self *Exchange) FilterByValueSinceLimit(arr []interface{}, field string, v
 
 	if since != nil {
 		result = funk.Filter(result, func(x interface{}) bool {
-			return x.(map[string]interface{})[key].(int) >= since.(int)
+			return x.(map[string]interface{})[key].(int64) >= since.(int64)
 		}).([]interface{})
 	}
 
 	if limit != nil {
-		limitNum := limit.(int)
+		limitNum := limit.(int64)
+		lenNum := int64(len(result))
+		if limitNum > lenNum {
+			limitNum = lenNum
+		}
 		if tail && since != nil {
-			result = result[len(result)-limitNum:]
+			result = result[lenNum-limitNum:]
 		} else {
 			result = result[:limitNum]
 		}
@@ -2044,7 +2048,7 @@ func (self *Exchange) FilterByValueSinceLimit(arr []interface{}, field string, v
 	return
 }
 func (self* Exchange) FilterBySymbolSinceLimit(arr []interface{}, symbol interface{}, since interface{}, limit interface{}) (result []interface{}) {
-	return self.FilterByValueSinceLimit(arr, "symbol", symbol, since, limit, "", false)
+	return self.FilterByValueSinceLimit(arr, "symbol", symbol, since, limit, "timestamp", false)
 }
 
 func (self* Exchange) DeepExtend(args ...interface{}) (result map[string]interface{}) {
@@ -2054,5 +2058,23 @@ func (self* Exchange) DeepExtend(args ...interface{}) (result map[string]interfa
 			self.RaiseInternalException(fmt.Sprintf("deepExtend err:%v, args:%v", err, args))
 		}
 	}
+	return
+}
+
+func (self *Exchange) InitDescribe() (err error) {
+	err = json.Unmarshal(self.Child.Describe(), &self.DescribeMap)
+	if err != nil {
+		return
+	}
+
+	err = self.DefineRestApi()
+	if err != nil {
+		return
+	}
+
+	self.Options = self.DescribeMap["options"].(map[string]interface{})
+	self.Urls = self.DescribeMap["urls"].(map[string]interface{})
+	self.Version = self.DescribeMap["version"].(string)
+	self.Exceptions = self.DescribeMap["exceptions"].(map[string]interface{})
 	return
 }

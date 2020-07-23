@@ -69,7 +69,7 @@ func TestFetchOrderBook(t *testing.T) {
 	log.Println("##### FetchOrder:", ex.Json(o))
 
 	// @ FetchOpenOrders
-	openOrders, err := ex.FetchOpenOrders("BTC/USDT", 0, 0, nil)
+	openOrders, err := ex.FetchOpenOrders("BTC/USDT", 0, 1000, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

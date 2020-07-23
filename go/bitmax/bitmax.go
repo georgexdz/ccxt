@@ -1,7 +1,6 @@
 package bitmax
 
 import (
-	"encoding/json"
 	"fmt"
 	. "github.com/georgexdz/ccxt/go/base"
 	"github.com/thoas/go-funk"
@@ -24,23 +23,6 @@ func New(config *ExchangeConfig) (ex *Bitmax, err error) {
 		return
 	}
 
-	return
-}
-
-func (self *Bitmax) InitDescribe() (err error) {
-	err = json.Unmarshal(self.Child.Describe(), &self.DescribeMap)
-	if err != nil {
-		return
-	}
-
-	err = self.DefineRestApi()
-	if err != nil {
-		return
-	}
-
-	self.Options = self.DescribeMap["options"].(map[string]interface{})
-	self.Urls = self.DescribeMap["urls"].(map[string]interface{})
-	self.Version = self.DescribeMap["version"].(string)
 	return
 }
 
@@ -323,7 +305,6 @@ func (self *Bitmax) FetchMarkets(params map[string]interface{}) (ret interface{}
 	cashAndFuturesData := self.ArrayConcat(cashData, futuresData)
 	cashAndFuturesById := self.IndexBy(cashAndFuturesData, "symbol")
 	dataById := self.DeepExtend(productsById, cashAndFuturesById)
-	// ids := reflect.ValueOf(dataById).MapKeys()
 	ids := funk.Keys(dataById)
 	result := []interface{}{}
 	for i := 0; i < self.Length(ids); i++ {
@@ -554,6 +535,8 @@ func (self *Bitmax) CreateOrder(symbol string, typ string, side string, amount f
 	request := map[string]interface{}{
 		"account-group":    accountGroup,
 		"account-category": accountCategory,
+		// TODO
+		// "symbol":           self.Member(market, "id"),
 		"symbol":           market.Id,
 		"time":             self.Milliseconds(),
 		"orderQty":         self.AmountToPrecision(symbol, amount),
