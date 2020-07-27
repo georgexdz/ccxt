@@ -730,3 +730,17 @@ func (self *Bitmax) HandleErrors(httpCode int64, reason string, url string, meth
 		self.RaiseException("ExchangeError", feedback)
 	}
 }
+
+func (self *Bitmax) LoadMarkets() map[string]*Market {
+	return nil
+}
+
+func (self *Bitmax) Market(symbol string) *Market {
+	li := strings.Split(symbol, "/")
+	return &Market{
+		Id:     symbol,
+		Symbol: symbol,
+		Base:   li[0],
+		Quote:  li[1],
+	}
+}
