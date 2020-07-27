@@ -562,6 +562,8 @@ type ExchangeInterface interface {
 	SetSecret(string)
 	SetPassword(string)
 	SetUid(string)
+	SetBaseUrl(string)
+	BaseUrl() string
 }
 
 type ExchangeInterfaceInternal interface {
@@ -2071,4 +2073,18 @@ func (self *Exchange) InitDescribe() (err error) {
 	self.Version = self.DescribeMap["version"].(string)
 	self.Exceptions = self.DescribeMap["exceptions"].(map[string]interface{})
 	return
+}
+
+func (self *Exchange) SetBaseUrl(u string) {
+	self.Urls["api"] = u
+}
+
+func (self *Exchange) BaseUrl() string {
+	if self.Urls["api"] == nil {
+		return ""
+	}
+	if u, ok := self.Urls["api"].(string); ok {
+		return u
+	}
+	return ""
 }
