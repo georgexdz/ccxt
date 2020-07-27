@@ -594,8 +594,8 @@ type Exchange struct {
 	Accounts       []interface{}
 	AccountsById   map[string]interface{}
 
-	Child          ExchangeInterfaceInternal
-	ApiDecodeInfo  map[string]*ApiDecode
+	Child         ExchangeInterfaceInternal
+	ApiDecodeInfo map[string]*ApiDecode
 	//ApiUrls        map[string]string
 	DescribeMap    map[string]interface{}
 	Options        map[string]interface{}
@@ -615,7 +615,10 @@ func (self *Exchange) Init(config *ExchangeConfig) (err error) {
 	}
 	self.Client = &http.Client{
 		Transport: tr,
-		Timeout:   time.Second * 10, //超时时间
+		Timeout:   time.Second * 10, // 默认超时时间 10 秒
+	}
+	if self.ExchangeConfig.Timeout > 0 {
+		self.Client.Timeout = self.ExchangeConfig.Timeout
 	}
 
 	self.httpExceptions = map[string]string{
@@ -2004,7 +2007,7 @@ func (self *Exchange) ToArray(o interface{}) (result []interface{}) {
 	return
 }
 
-func (self* Exchange) ArrayConcat(a interface{}, b interface{}) (result []interface{}) {
+func (self *Exchange) ArrayConcat(a interface{}, b interface{}) (result []interface{}) {
 	return append(a.([]interface{}), b.([]interface{})...)
 }
 
@@ -2043,11 +2046,11 @@ func (self *Exchange) FilterByValueSinceLimit(arr []interface{}, field string, v
 	}
 	return
 }
-func (self* Exchange) FilterBySymbolSinceLimit(arr []interface{}, symbol interface{}, since interface{}, limit interface{}) (result []interface{}) {
+func (self *Exchange) FilterBySymbolSinceLimit(arr []interface{}, symbol interface{}, since interface{}, limit interface{}) (result []interface{}) {
 	return self.FilterByValueSinceLimit(arr, "symbol", symbol, since, limit, "timestamp", false)
 }
 
-func (self* Exchange) DeepExtend(args ...interface{}) (result map[string]interface{}) {
+func (self *Exchange) DeepExtend(args ...interface{}) (result map[string]interface{}) {
 	for _, arg := range args {
 		err := mergo.Merge(&result, arg, mergo.WithOverride)
 		if err != nil {
