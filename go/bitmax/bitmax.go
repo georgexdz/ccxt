@@ -432,7 +432,7 @@ func (self *Bitmax) FetchOrderBook(symbol string, limit int64, params map[string
 	self.LoadMarkets()
 	market := self.Market(symbol)
 	request := map[string]interface{}{
-		"symbol": self.Member(market, "id"),
+		"symbol": market.Id,
 	}
 	response := self.ApiFunc("publicGetDepth", self.Extend(request, params), nil, nil)
 	data := self.SafeValue(response, "data", map[string]interface{}{})
@@ -541,8 +541,6 @@ func (self *Bitmax) CreateOrder(symbol string, typ string, side string, amount f
 	request := map[string]interface{}{
 		"account-group":    accountGroup,
 		"account-category": accountCategory,
-		// TODO
-		// "symbol":           self.Member(market, "id"),
 		"symbol":    market.Id,
 		"time":      self.Milliseconds(),
 		"orderQty":  self.AmountToPrecision(symbol, amount),
@@ -655,8 +653,6 @@ func (self *Bitmax) CancelOrder(id string, symbol string, params map[string]inte
 	request := map[string]interface{}{
 		"account-group":    accountGroup,
 		"account-category": accountCategory,
-		// TODO
-		// "symbol":           self.Member(market, "id"),
 		"symbol": market.Id,
 		"time":   self.Milliseconds(),
 		"id":     "foobar",
