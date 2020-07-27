@@ -661,7 +661,6 @@ def write_ex_file(ex, code):
     with open(os.path.join(des_dir, f'{ex.lower()}_test.go'), 'w') as f:
         f.write(format_test_file(ex))
     # go fmt
-    return
     cmd = "go fmt -x %s" % shlex.quote(des_dir)
     p = subprocess.Popen(cmd, shell=True)
     p.communicate()
