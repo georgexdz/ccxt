@@ -14,7 +14,7 @@ func init() {
 
 // api.json 需要放到和此文件同一目录
 func loadApiKey(ex *Bitmax) {
-	plan, err := ioutil.ReadFile("test_config.json")
+	plan, err := ioutil.ReadFile("api.json")
 	if err != nil {
 		return
 	}
@@ -27,7 +27,9 @@ func loadApiKey(ex *Bitmax) {
 
 	ex.ApiKey = data["apiKey"].(string)
 	ex.Secret = data["secret"].(string)
-	ex.Password = data["password"].(string)
+	if data["password"] != nil {
+		ex.Password = data["password"].(string)
+	}
 }
 
 func TestFetchOrderBook(t *testing.T) {
@@ -55,7 +57,7 @@ func TestFetchOrderBook(t *testing.T) {
 	log.Println("##### FetchBalance:", ex.Json(balance))
 
 	// @ CreateOrder
-	order, err := ex.CreateOrder("BTC/USDT", "limit", "buy", 0.001, 9200., nil)
+	order, err := ex.CreateOrder("BTC/USDT", "limit", "buy", 0.001, 8000., nil)
 	if err != nil {
 		t.Fatal(err)
 	}

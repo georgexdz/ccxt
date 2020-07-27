@@ -229,12 +229,18 @@ func (self *Bitmax) Describe() []byte {
 
 func (self *Bitmax) ParseOrderStatus(status string) string {
 	switch status {
-	case "PendingNew": return "open"
-	case "New": return "open"
-	case "PartiallyFilled": return "open"
-	case "Filled": return "closed"
-	case "Canceled": return "canceled"
-	case "Rejected": return "rejected"
+	case "PendingNew":
+		return "open"
+	case "New":
+		return "open"
+	case "PartiallyFilled":
+		return "open"
+	case "Filled":
+		return "closed"
+	case "Canceled":
+		return "canceled"
+	case "Rejected":
+		return "rejected"
 	}
 	return status
 }
@@ -537,11 +543,11 @@ func (self *Bitmax) CreateOrder(symbol string, typ string, side string, amount f
 		"account-category": accountCategory,
 		// TODO
 		// "symbol":           self.Member(market, "id"),
-		"symbol":           market.Id,
-		"time":             self.Milliseconds(),
-		"orderQty":         self.AmountToPrecision(symbol, amount),
-		"orderType":        typ,
-		"side":             side,
+		"symbol":    market.Id,
+		"time":      self.Milliseconds(),
+		"orderQty":  self.AmountToPrecision(symbol, amount),
+		"orderType": typ,
+		"side":      side,
 	}
 	if self.ToBool(!self.TestNil(clientOrderId)) {
 		self.SetValue(request, "id", clientOrderId)
@@ -651,9 +657,9 @@ func (self *Bitmax) CancelOrder(id string, symbol string, params map[string]inte
 		"account-category": accountCategory,
 		// TODO
 		// "symbol":           self.Member(market, "id"),
-		"symbol":           market.Id,
-		"time":             self.Milliseconds(),
-		"id":               "foobar",
+		"symbol": market.Id,
+		"time":   self.Milliseconds(),
+		"id":     "foobar",
 	}
 	if self.ToBool(self.TestNil(clientOrderId)) {
 		self.SetValue(request, "orderId", id)
