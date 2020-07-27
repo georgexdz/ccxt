@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/georgexdz/ccxt/go/base"
 	"github.com/georgexdz/ccxt/go/kucoin"
+	"github.com/georgexdz/ccxt/go/bitmax"
 )
 
 type IExchange = base.ExchangeInterface
@@ -14,6 +15,8 @@ func New(exchange string, config *base.ExchangeConfig) (ex IExchange, err error)
 	switch exchange {
 	case "kucoin":
 		ex, err = kucoin.New(config)
+	case "bitmax":
+		ex, err = bitmax.New(config)
 	default:
 		err = fmt.Errorf("exchange %s is not supported", exchange)
 	}
