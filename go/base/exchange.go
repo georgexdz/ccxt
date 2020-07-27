@@ -1285,13 +1285,10 @@ func (self *Exchange) InMap(k interface{}, m interface{}) bool {
 
 func (self *Exchange) ToBool(v interface{}) bool {
 	if v != nil {
-		switch v.(type) {
-		case bool:
-			vv := v.(bool)
-			return vv
-		default:
-			return !self.TestNil(v)
+		if b, ok := v.(bool); ok {
+			return b
 		}
+		return !self.TestNil(v)
 	} else {
 		return false
 	}
