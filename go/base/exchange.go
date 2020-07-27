@@ -1778,8 +1778,7 @@ func (self *Exchange) SetUid(s string) {
 	// TODO
 }
 
-func (self *Exchange) ParseOrders(orders interface{}, market interface{}, since int64, limit int64) []map[string]interface{} {
-	result := []map[string]interface{}{}
+func (self *Exchange) ParseOrders(orders interface{}, market interface{}, since int64, limit int64) (result []interface{}) {
 	for _, order := range orders.([]interface{}) {
 		result = append(result, self.Child.ParseOrder(order, market))
 	}
@@ -1797,10 +1796,8 @@ func (self *Exchange) ToOrder(order interface{}) (result *Order) {
 
 func (self *Exchange) ToOrders(orders interface{}) (result []*Order) {
 	for _, one := range orders.([]interface{}) {
-		if o, ok := one.(map[string]interface{}); ok {
-			order := (&Order{}).InitFromMap(o)
-			result = append(result, order)
-		}
+		order := (&Order{}).InitFromMap(one.(map[string]interface{}))
+		result = append(result, order)
 	}
 	return
 }
