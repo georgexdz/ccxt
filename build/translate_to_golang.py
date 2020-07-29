@@ -528,6 +528,7 @@ func New(config *ExchangeConfig) (ex *{EX_NAME}, err error) {{
 
 	err = ex.InitDescribe()
 	if err != nil {{
+		ex = nil
 		return
 	}}
 

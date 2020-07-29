@@ -20,6 +20,7 @@ func New(config *ExchangeConfig) (ex *Bitmax, err error) {
 
 	err = ex.InitDescribe()
 	if err != nil {
+		ex = nil
 		return
 	}
 
