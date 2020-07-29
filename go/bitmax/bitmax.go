@@ -402,9 +402,9 @@ func (self *Bitmax) FetchBalance(params map[string]interface{}) (balanceResult *
 		"account-group": accountGroup,
 	}
 	method := "accountGroupGetCashBalance"
-	if self.ToBool(accountCategory == "margin") {
+	if accountCategory == "margin" {
 		method = "accountGroupGetMarginBalance"
-	} else if self.ToBool(accountCategory == "futures") {
+	} else if accountCategory == "futures" {
 		method = "accountGroupGetFuturesCollateralBalance"
 	}
 	response := self.ApiFunc(method, self.Extend(request, params), nil, nil)
@@ -416,9 +416,17 @@ func (self *Bitmax) FetchBalance(params map[string]interface{}) (balanceResult *
 		balance := self.Member(balances, i)
 		code := self.SafeCurrencyCode(self.SafeString(balance, "asset", ""))
 		account := self.Account()
-		self.SetValue(account, "free", self.SafeFloat(balance, "availableBalance", 0))
-		self.SetValue(account, "total", self.SafeFloat(balance, "totalBalance", 0))
-		self.SetValue(result, code, account)
+		free := self.SafeFloat(balance, "availableBalance", 0)
+		total := self.SafeFloat(balance, "totalBalance", 0)
+		if accountCategory == "margin" {
+			borrowed := self.SafeFloat(balance, "borrowed", 0)
+			free -= borrowed
+			total -= borrowed
+		}
+		account["free"] = free
+		account["total"] = total
+		account["used"] = total - free
+		result[code] = account
 	}
 	return self.ParseBalance(result), nil
 }
@@ -541,11 +549,11 @@ func (self *Bitmax) CreateOrder(symbol string, typ string, side string, amount f
 	request := map[string]interface{}{
 		"account-group":    accountGroup,
 		"account-category": accountCategory,
-		"symbol":    market.Id,
-		"time":      self.Milliseconds(),
-		"orderQty":  self.AmountToPrecision(symbol, amount),
-		"orderType": typ,
-		"side":      side,
+		"symbol":           market.Id,
+		"time":             self.Milliseconds(),
+		"orderQty":         self.AmountToPrecision(symbol, amount),
+		"orderType":        typ,
+		"side":             side,
 	}
 	if self.ToBool(!self.TestNil(clientOrderId)) {
 		self.SetValue(request, "id", clientOrderId)
@@ -653,9 +661,9 @@ func (self *Bitmax) CancelOrder(id string, symbol string, params map[string]inte
 	request := map[string]interface{}{
 		"account-group":    accountGroup,
 		"account-category": accountCategory,
-		"symbol": market.Id,
-		"time":   self.Milliseconds(),
-		"id":     "foobar",
+		"symbol":           market.Id,
+		"time":             self.Milliseconds(),
+		"id":               "foobar",
 	}
 	if self.ToBool(self.TestNil(clientOrderId)) {
 		self.SetValue(request, "orderId", id)
