@@ -1,7 +1,8 @@
-package kucoin
+package margin_bitmax
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"testing"
@@ -12,7 +13,7 @@ func init() {
 }
 
 // api.json 需要放到和此文件同一目录
-func loadApiKey(ex *Kucoin) {
+func loadApiKey(ex *MarginBitmax) {
 	plan, err := ioutil.ReadFile("api.json")
 	if err != nil {
 		return
@@ -26,7 +27,9 @@ func loadApiKey(ex *Kucoin) {
 
 	ex.ApiKey = data["apiKey"].(string)
 	ex.Secret = data["secret"].(string)
-	ex.Password = data["password"].(string)
+	if data["password"] != nil {
+		ex.Password = data["password"].(string)
+	}
 }
 
 func TestFetchOrderBook(t *testing.T) {
@@ -37,6 +40,7 @@ func TestFetchOrderBook(t *testing.T) {
 
 	ex.Verbose = true
 	loadApiKey(ex)
+	fmt.Println(ex.ApiKey)
 
 	// @ FetchOrderBook
 	orderbook, err := ex.FetchOrderBook("BTC/USDT", 5, nil)
@@ -51,32 +55,36 @@ func TestFetchOrderBook(t *testing.T) {
 		t.Fatal(err)
 	}
 	log.Println("##### FetchBalance:", ex.Json(balance))
+	return
 
 	// @ CreateOrder
-	order, err := ex.CreateOrder("ETH/BTC", "limit", "buy", 0.0001, 0.01, nil)
+	order, err := ex.CreateOrder("BTC/USDT", "limit", "buy", 0.001, 8000., nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	log.Println("##### CreateOrder:", order.Id)
 
 	// @ FetchOrder
-	o, err := ex.FetchOrder(order.Id, "ETH/BTC", nil)
+	o, err := ex.FetchOrder(order.Id, "BTC/USDT", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	log.Println("##### FetchOrder:", ex.Json(o))
 
 	// @ FetchOpenOrders
-	openOrders, err := ex.FetchOpenOrders("ETH/BTC", 0, 0, nil)
+	openOrders, err := ex.FetchOpenOrders("BTC/USDT", 0, 1000, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	log.Println("##### FetchOpenOrders:", ex.Json(openOrders))
 
 	// @ CancelOrder
-	resp, err := ex.CancelOrder(order.Id, "ETH/BTC", nil)
-	if err != nil {
-		t.Fatal(err)
+	for _, order := range openOrders {
+		resp, err := ex.CancelOrder(order.Id, "BTC/USDT", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		log.Println("##### CancelOrder:", resp)
 	}
-	log.Println("##### CancelOrder:", resp)
+
 }

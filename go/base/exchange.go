@@ -562,6 +562,8 @@ type ExchangeInterface interface {
 	SetSecret(string)
 	SetPassword(string)
 	SetUid(string)
+	SetBaseUrl(string)
+	BaseUrl() string
 }
 
 type ExchangeInterfaceInternal interface {
@@ -592,8 +594,8 @@ type Exchange struct {
 	Accounts       []interface{}
 	AccountsById   map[string]interface{}
 
-	Child          ExchangeInterfaceInternal
-	ApiDecodeInfo  map[string]*ApiDecode
+	Child         ExchangeInterfaceInternal
+	ApiDecodeInfo map[string]*ApiDecode
 	//ApiUrls        map[string]string
 	DescribeMap    map[string]interface{}
 	Options        map[string]interface{}
@@ -613,7 +615,10 @@ func (self *Exchange) Init(config *ExchangeConfig) (err error) {
 	}
 	self.Client = &http.Client{
 		Transport: tr,
-		Timeout:   time.Second * 10, //超时时间
+		Timeout:   time.Second * 10, // 默认超时时间 10 秒
+	}
+	if self.ExchangeConfig.Timeout > 0 {
+		self.Client.Timeout = self.ExchangeConfig.Timeout
 	}
 
 	self.httpExceptions = map[string]string{
@@ -1285,13 +1290,10 @@ func (self *Exchange) InMap(k interface{}, m interface{}) bool {
 
 func (self *Exchange) ToBool(v interface{}) bool {
 	if v != nil {
-		switch v.(type) {
-		case bool:
-			vv := v.(bool)
-			return vv
-		default:
-			return !self.TestNil(v)
+		if b, ok := v.(bool); ok {
+			return b
 		}
+		return !self.TestNil(v)
 	} else {
 		return false
 	}
@@ -1778,8 +1780,7 @@ func (self *Exchange) SetUid(s string) {
 	// TODO
 }
 
-func (self *Exchange) ParseOrders(orders interface{}, market interface{}, since int64, limit int64) []map[string]interface{} {
-	result := []map[string]interface{}{}
+func (self *Exchange) ParseOrders(orders interface{}, market interface{}, since int64, limit int64) (result []interface{}) {
 	for _, order := range orders.([]interface{}) {
 		result = append(result, self.Child.ParseOrder(order, market))
 	}
@@ -1797,10 +1798,8 @@ func (self *Exchange) ToOrder(order interface{}) (result *Order) {
 
 func (self *Exchange) ToOrders(orders interface{}) (result []*Order) {
 	for _, one := range orders.([]interface{}) {
-		if o, ok := one.(map[string]interface{}); ok {
-			order := (&Order{}).InitFromMap(o)
-			result = append(result, order)
-		}
+		order := (&Order{}).InitFromMap(one.(map[string]interface{}))
+		result = append(result, order)
 	}
 	return
 }
@@ -2008,7 +2007,7 @@ func (self *Exchange) ToArray(o interface{}) (result []interface{}) {
 	return
 }
 
-func (self* Exchange) ArrayConcat(a interface{}, b interface{}) (result []interface{}) {
+func (self *Exchange) ArrayConcat(a interface{}, b interface{}) (result []interface{}) {
 	return append(a.([]interface{}), b.([]interface{})...)
 }
 
@@ -2047,11 +2046,11 @@ func (self *Exchange) FilterByValueSinceLimit(arr []interface{}, field string, v
 	}
 	return
 }
-func (self* Exchange) FilterBySymbolSinceLimit(arr []interface{}, symbol interface{}, since interface{}, limit interface{}) (result []interface{}) {
+func (self *Exchange) FilterBySymbolSinceLimit(arr []interface{}, symbol interface{}, since interface{}, limit interface{}) (result []interface{}) {
 	return self.FilterByValueSinceLimit(arr, "symbol", symbol, since, limit, "timestamp", false)
 }
 
-func (self* Exchange) DeepExtend(args ...interface{}) (result map[string]interface{}) {
+func (self *Exchange) DeepExtend(args ...interface{}) (result map[string]interface{}) {
 	for _, arg := range args {
 		err := mergo.Merge(&result, arg, mergo.WithOverride)
 		if err != nil {
@@ -2077,4 +2076,18 @@ func (self *Exchange) InitDescribe() (err error) {
 	self.Version = self.DescribeMap["version"].(string)
 	self.Exceptions = self.DescribeMap["exceptions"].(map[string]interface{})
 	return
+}
+
+func (self *Exchange) SetBaseUrl(u string) {
+	self.Urls["api"] = u
+}
+
+func (self *Exchange) BaseUrl() string {
+	if self.Urls["api"] == nil {
+		return ""
+	}
+	if u, ok := self.Urls["api"].(string); ok {
+		return u
+	}
+	return ""
 }

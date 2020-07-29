@@ -20,6 +20,7 @@ func New(config *ExchangeConfig) (ex *Bitmax, err error) {
 
 	err = ex.InitDescribe()
 	if err != nil {
+		ex = nil
 		return
 	}
 
@@ -229,12 +230,18 @@ func (self *Bitmax) Describe() []byte {
 
 func (self *Bitmax) ParseOrderStatus(status string) string {
 	switch status {
-	case "PendingNew": return "open"
-	case "New": return "open"
-	case "PartiallyFilled": return "open"
-	case "Filled": return "closed"
-	case "Canceled": return "canceled"
-	case "Rejected": return "rejected"
+	case "PendingNew":
+		return "open"
+	case "New":
+		return "open"
+	case "PartiallyFilled":
+		return "open"
+	case "Filled":
+		return "closed"
+	case "Canceled":
+		return "canceled"
+	case "Rejected":
+		return "rejected"
 	}
 	return status
 }
@@ -396,9 +403,9 @@ func (self *Bitmax) FetchBalance(params map[string]interface{}) (balanceResult *
 		"account-group": accountGroup,
 	}
 	method := "accountGroupGetCashBalance"
-	if self.ToBool(accountCategory == "margin") {
+	if accountCategory == "margin" {
 		method = "accountGroupGetMarginBalance"
-	} else if self.ToBool(accountCategory == "futures") {
+	} else if accountCategory == "futures" {
 		method = "accountGroupGetFuturesCollateralBalance"
 	}
 	response := self.ApiFunc(method, self.Extend(request, params), nil, nil)
@@ -410,9 +417,17 @@ func (self *Bitmax) FetchBalance(params map[string]interface{}) (balanceResult *
 		balance := self.Member(balances, i)
 		code := self.SafeCurrencyCode(self.SafeString(balance, "asset", ""))
 		account := self.Account()
-		self.SetValue(account, "free", self.SafeFloat(balance, "availableBalance", 0))
-		self.SetValue(account, "total", self.SafeFloat(balance, "totalBalance", 0))
-		self.SetValue(result, code, account)
+		free := self.SafeFloat(balance, "availableBalance", 0)
+		total := self.SafeFloat(balance, "totalBalance", 0)
+		if accountCategory == "margin" {
+			borrowed := self.SafeFloat(balance, "borrowed", 0)
+			free -= borrowed
+			total -= borrowed
+		}
+		account["free"] = free
+		account["total"] = total
+		account["used"] = total - free
+		result[code] = account
 	}
 	return self.ParseBalance(result), nil
 }
@@ -426,7 +441,7 @@ func (self *Bitmax) FetchOrderBook(symbol string, limit int64, params map[string
 	self.LoadMarkets()
 	market := self.Market(symbol)
 	request := map[string]interface{}{
-		"symbol": self.Member(market, "id"),
+		"symbol": market.Id,
 	}
 	response := self.ApiFunc("publicGetDepth", self.Extend(request, params), nil, nil)
 	data := self.SafeValue(response, "data", map[string]interface{}{})
@@ -535,8 +550,6 @@ func (self *Bitmax) CreateOrder(symbol string, typ string, side string, amount f
 	request := map[string]interface{}{
 		"account-group":    accountGroup,
 		"account-category": accountCategory,
-		// TODO
-		// "symbol":           self.Member(market, "id"),
 		"symbol":           market.Id,
 		"time":             self.Milliseconds(),
 		"orderQty":         self.AmountToPrecision(symbol, amount),
@@ -649,8 +662,6 @@ func (self *Bitmax) CancelOrder(id string, symbol string, params map[string]inte
 	request := map[string]interface{}{
 		"account-group":    accountGroup,
 		"account-category": accountCategory,
-		// TODO
-		// "symbol":           self.Member(market, "id"),
 		"symbol":           market.Id,
 		"time":             self.Milliseconds(),
 		"id":               "foobar",
@@ -722,5 +733,19 @@ func (self *Bitmax) HandleErrors(httpCode int64, reason string, url string, meth
 		self.ThrowExactlyMatchedException(self.Member(self.Exceptions, "exact"), message, feedback)
 		self.ThrowBroadlyMatchedException(self.Member(self.Exceptions, "broad"), message, feedback)
 		self.RaiseException("ExchangeError", feedback)
+	}
+}
+
+func (self *Bitmax) LoadMarkets() map[string]*Market {
+	return nil
+}
+
+func (self *Bitmax) Market(symbol string) *Market {
+	li := strings.Split(symbol, "/")
+	return &Market{
+		Id:     symbol,
+		Symbol: symbol,
+		Base:   li[0],
+		Quote:  li[1],
 	}
 }
