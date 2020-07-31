@@ -1,6 +1,7 @@
 package huobipro
 
 import (
+	"fmt"
 	. "github.com/georgexdz/ccxt/go/base"
 	"math"
 	"reflect"
@@ -204,7 +205,7 @@ func (self *Huobipro) Describe() []byte {
         }
     },
     "options": {
-        "fetchOrdersByStatesMethod": "private_get_order_orders",
+        "fetchOrdersByStatesMethod": "privateGetOrderOrders",
         "fetchOpenOrdersMethod": "fetch_open_orders_v1",
         "createMarketBuyOrderRequiresPrice": true,
         "fetchMarketsMethod": "publicGetCommonSymbols",
@@ -219,7 +220,7 @@ func (self *Huobipro) Describe() []byte {
 }`)
 }
 
-func (self *Huobipro) FetchMarkets(params map[string]interface{}) (ret interface{}) {
+func (self *Huobipro) FetchMarkets(params map[string]interface{}) []interface{} {
 	method := self.Member(self.Options, "fetchMarketsMethod")
 	response := self.ApiFunc(method.(string), params, nil, nil)
 	markets := self.SafeValue(response, "data", nil)
@@ -240,9 +241,9 @@ func (self *Huobipro) FetchMarkets(params map[string]interface{}) (ret interface
 			"amount": self.Member(market, "amount-precision"),
 			"price":  self.Member(market, "price-precision"),
 		}
-		maker := self.IfThenElse(self.ToBool(base == "OMG"), 0, 0.2/100)
-		taker := self.IfThenElse(self.ToBool(base == "OMG"), 0, 0.2/100)
-		minAmount := self.SafeFloat(market, "min-order-amt", math.Pow10(-precision["acount"].(int)))
+		maker := self.IfThenElse(self.ToBool(base == "OMG"), 0., 0.2/100)
+		taker := self.IfThenElse(self.ToBool(base == "OMG"), 0., 0.2/100)
+		minAmount := self.SafeFloat(market, "min-order-amt", math.Pow10(int(-precision["amount"].(float64))))
 		maxAmount := self.SafeFloat(market, "max-order-amt", 0)
 		minCost := self.SafeFloat(market, "min-order-value", 0)
 		state := self.SafeString(market, "state", "")
@@ -264,7 +265,7 @@ func (self *Huobipro) FetchMarkets(params map[string]interface{}) (ret interface
 					"max": maxAmount,
 				},
 				"price": map[string]interface{}{
-					"min": math.Pow10(-precision["price"].(int)),
+					"min": math.Pow10(-int(precision["price"].(float64))),
 					"max": nil,
 				},
 				"cost": map[string]interface{}{
@@ -285,7 +286,7 @@ func (self *Huobipro) FetchOrderBook(symbol string, limit int64, params map[stri
 		}
 	}()
 	self.LoadMarkets()
-	market := self.ApiFunc("market", symbol, nil, nil)
+	market := self.Market(symbol)
 	request := map[string]interface{}{
 		"symbol": self.Member(market, "id"),
 		"type":   "step0",
@@ -305,7 +306,12 @@ func (self *Huobipro) FetchOrderBook(symbol string, limit int64, params map[stri
 	return
 }
 
-func (self *Huobipro) FetchCurrencies(params map[string]interface{}) (ret interface{}) {
+func (self *Huobipro) FetchCurrencies(params map[string]interface{}) map[string]interface{} {
+	defer func() {
+		if e := recover(); e != nil {
+			fmt.Println(e)
+		}
+	}()
 	request := map[string]interface{}{
 		"language": self.Member(self.Options, "language"),
 	}
@@ -353,6 +359,12 @@ func (self *Huobipro) FetchCurrencies(params map[string]interface{}) (ret interf
 		})
 	}
 	return result
+}
+
+func (self *Huobipro) FetchAccounts(params map[string]interface{}) []interface{} {
+	self.LoadMarkets()
+	response := self.ApiFunc("privateGetAccountAccounts", params, nil, nil)
+	return self.Member(response, "data").([]interface{})
 }
 
 func (self *Huobipro) FetchBalance(params map[string]interface{}) (balanceResult *Account, err error) {
@@ -416,7 +428,7 @@ func (self *Huobipro) FetchOpenOrders(symbol string, since int64, limit int64, p
 	}()
 	method := self.SafeString(self.Options, "fetchOpenOrdersMethod", "fetch_open_orders_v1")
 	if method == "fetch_open_orders_v1" {
-		return self.fetch_open_orders_v1(symbol, since, limit, params), nil
+		return self.ToOrders(self.fetch_open_orders_v1(symbol, since, limit, params)), nil
 	} else {
 		self.RaiseInternalException("unsported method: " + method)
 	}
@@ -429,21 +441,20 @@ func (self *Huobipro) FetchOrdersByStates(states string, symbol string, since in
 		"states": states,
 	}
 	var market interface{}
-	if self.ToBool(!self.TestNil(symbol)) {
-		market = self.ApiFunc("market", symbol, nil, nil)
+	if symbol != "" {
+		market = self.Market(symbol)
 		self.SetValue(request, "symbol", self.Member(market, "id"))
 	}
-	method := self.SafeString(self.Options, "fetchOrdersByStatesMethod", "private_get_order_orders")
-	response := self.Method(self.Extend(request, params))
+	method := self.SafeString(self.Options, "fetchOrdersByStatesMethod", "privateGetOrderOrders")
+	response := self.ApiFunc(method, self.Extend(request, params), nil, nil)
 	return self.ParseOrders(self.Member(response, "data"), market, since, limit)
 }
 
-func (self *Huobipro) fetch_open_orders_v1(symbol string, since int64, limit int64, params map[string]interface{}) () {
+func (self *Huobipro) fetch_open_orders_v1(symbol string, since int64, limit int64, params map[string]interface{}) (orders interface{}) {
 	if symbol == "" {
-		self.RaiseInternalException(self.id + " fetchOpenOrdersV1 requires a symbol argument")
+		self.RaiseInternalException(self.Id + " fetchOpenOrdersV1 requires a symbol argument")
 	}
-	return self.FetchOrder
-	return self.fetch_orders_by_states('pre-submitted,submitted,partial-filled', symbol, since, limit, params)
+	return self.FetchOrdersByStates("pre-submitted,submitted,partial-filled", symbol, since, limit, params)
 }
 
 func (self *Huobipro) ParseOrderStatus(status string) string {
@@ -458,7 +469,11 @@ func (self *Huobipro) ParseOrderStatus(status string) string {
 }
 
 func (self *Huobipro) ParseOrder(order interface{}, market interface{}) (result map[string]interface{}) {
-	id := self.SafeString(order, "id", "")
+	id := ""
+	if order.(map[string]interface{})["id"] != nil {
+		id = fmt.Sprintf("%v", int64(order.(map[string]interface{})["id"].(float64)))
+	}
+	//id := self.SafeString(order, "id", "")
 	var side interface{}
 	var typ interface{}
 	var status interface{}
@@ -478,7 +493,7 @@ func (self *Huobipro) ParseOrder(order interface{}, market interface{}) (result 
 		}
 	}
 	if self.ToBool(!self.TestNil(market)) {
-		symbol = self.Member(market, "symbol")
+		symbol = market.(*Market).Symbol
 	}
 	timestamp := self.SafeInteger(order, "created-at", 0)
 	amount := self.SafeFloat(order, "amount", 0)
@@ -548,10 +563,10 @@ func (self *Huobipro) CreateOrder(symbol string, typ string, side string, amount
 	}()
 	self.LoadMarkets()
 	self.LoadAccounts()
-	market := self.ApiFunc("market", symbol, nil, nil)
+	market := self.Market(symbol)
 	request := map[string]interface{}{
 		"account-id": self.Member(self.Member(self.Accounts, 0), "id"),
-		"symbol":     self.Member(market, "id"),
+		"symbol":     market.Id,
 		"type":       side + "-" + typ,
 	}
 	if self.ToBool(typ == "market" && side == "buy") {
@@ -571,7 +586,7 @@ func (self *Huobipro) CreateOrder(symbol string, typ string, side string, amount
 		self.SetValue(request, "price", self.PriceToPrecision(symbol, price))
 	}
 	method := self.Member(self.Options, "createOrderMethod")
-	response := self.ApiFunc(method.(string), params, nil, nil)
+	response := self.ApiFunc(method.(string), self.Extend(params, request), nil, nil)
 	timestamp := self.Milliseconds()
 	id := self.SafeString(response, "data", "")
 	return self.ToOrder(map[string]interface{}{
@@ -623,7 +638,6 @@ func (self *Huobipro) Sign(path string, api string, method string, params map[st
 	url += "/" + self.ImplodeParams(path, params)
 	query := self.Omit(params, self.ExtractParams(path))
 	if self.ToBool(api == "private" || api == "v2Private") {
-		self.CheckRequiredCredentials()
 		timestamp := self.Ymdhms(self.Milliseconds(), "T")
 		request := map[string]interface{}{
 			"SignatureMethod":  "HmacSHA256",

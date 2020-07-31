@@ -301,7 +301,7 @@ func (self *Bitmax) FetchCurrencies(params map[string]interface{}) (ret interfac
 	return result
 }
 
-func (self *Bitmax) FetchMarkets(params map[string]interface{}) (ret interface{}) {
+func (self *Bitmax) FetchMarkets(params map[string]interface{}) []interface{} {
 	products := self.ApiFunc("publicGetProducts", params, nil, nil)
 	cash := self.ApiFunc("publicGetCashProducts", params, nil, nil)
 	futures := self.ApiFunc("publicGetFuturesContracts", params, nil, nil)
