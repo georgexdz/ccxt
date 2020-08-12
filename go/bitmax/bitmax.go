@@ -374,7 +374,9 @@ func (self *Bitmax) FetchAccounts(params map[string]interface{}) []interface{} {
 		response = self.ApiFunc("privateGetInfo", params, nil, nil)
 		data := self.SafeValue(response, "data", map[string]interface{}{})
 		accountGroup = self.SafeString(data, "accountGroup", "")
+		self.Lock()
 		self.SetValue(self.Options, "account-group", accountGroup)
+		self.Unlock()
 	}
 	return []interface{}{map[string]interface{}{
 		"id":       accountGroup,

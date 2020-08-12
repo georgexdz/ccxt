@@ -25,6 +25,7 @@ import (
 	"reflect"
 	"regexp"
 	"syscall"
+	"sync"
 
 	"runtime/debug"
 	"sort"
@@ -581,6 +582,7 @@ type ExchangeInterfaceInternal interface {
 
 // Exchange struct
 type Exchange struct {
+	sync.Mutex
 	ExchangeInfo
 	ExchangeConfig
 
