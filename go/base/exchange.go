@@ -780,8 +780,8 @@ func (self *Exchange) SetMarkets(markets []*Market, currencies map[string]*Curre
 
 // func (self *Exchange) LoadMarkets(reload bool, params map[string]interface{}) (map[string]*Market, error) {
 func (self *Exchange) LoadMarkets() map[string]*Market {
-	self.Lock()
-	defer self.Unlock()
+	//self.Lock()
+	//defer self.Unlock()
 	var currencies map[string]*Currency
 	if self.Markets == nil {
 		marketData := self.Child.FetchMarkets(nil)
@@ -829,13 +829,14 @@ func (self *Exchange) LoadMarkets() map[string]*Market {
 }
 
 func (self *Exchange) LoadAccounts() []interface{} {
-	self.Lock()
-	defer self.Unlock()
+	//self.Lock()
+	//defer self.Unlock()
 	if len(self.Accounts) > 0 {
 		return self.Accounts
 	}
-	self.Accounts = self.Child.FetchAccounts(nil)
-	self.AccountsById = self.IndexBy(self.Accounts, "id")
+	accounts := self.Child.FetchAccounts(nil)
+	self.Accounts = accounts
+	self.AccountsById = self.IndexBy(accounts, "id")
 	return self.Accounts
 }
 
