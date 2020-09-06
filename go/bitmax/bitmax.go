@@ -11,6 +11,7 @@ import (
 
 type Bitmax struct {
 	Exchange
+	accountGroup string
 }
 
 func New(config *ExchangeConfig) (ex *Bitmax, err error) {
@@ -368,15 +369,13 @@ func (self *Bitmax) FetchMarkets(params map[string]interface{}) (ret interface{}
 }
 
 func (self *Bitmax) FetchAccounts(params map[string]interface{}) []interface{} {
-	accountGroup := self.SafeString(self.Options, "account-group", "")
+	accountGroup := self.accountGroup
 	var response interface{}
 	if self.ToBool(self.TestNil(accountGroup)) {
 		response = self.ApiFunc("privateGetInfo", params, nil, nil)
 		data := self.SafeValue(response, "data", map[string]interface{}{})
 		accountGroup = self.SafeString(data, "accountGroup", "")
-		self.Lock()
-		self.SetValue(self.Options, "account-group", accountGroup)
-		self.Unlock()
+		self.accountGroup = accountGroup
 	}
 	return []interface{}{map[string]interface{}{
 		"id":       accountGroup,

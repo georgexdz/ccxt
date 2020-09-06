@@ -582,7 +582,7 @@ type ExchangeInterfaceInternal interface {
 
 // Exchange struct
 type Exchange struct {
-	sync.Mutex
+	sync.RWMutex
 	ExchangeInfo
 	ExchangeConfig
 
@@ -780,6 +780,8 @@ func (self *Exchange) SetMarkets(markets []*Market, currencies map[string]*Curre
 
 // func (self *Exchange) LoadMarkets(reload bool, params map[string]interface{}) (map[string]*Market, error) {
 func (self *Exchange) LoadMarkets() map[string]*Market {
+	self.Lock()
+	defer self.Unlock()
 	var currencies map[string]*Currency
 	if self.Markets == nil {
 		marketData := self.Child.FetchMarkets(nil)
@@ -827,6 +829,8 @@ func (self *Exchange) LoadMarkets() map[string]*Market {
 }
 
 func (self *Exchange) LoadAccounts() []interface{} {
+	self.Lock()
+	defer self.Unlock()
 	if len(self.Accounts) > 0 {
 		return self.Accounts
 	}
