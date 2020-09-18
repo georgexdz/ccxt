@@ -62,6 +62,7 @@ type Market struct {
 	Spot           bool        `json:"spot"`       // from bitmex
 	Swap           bool        `json:"swap"`       // from bitmex
 	Future         bool        `json:"future"`     // from bitmex
+	Option         bool
 	Prediction     bool        `json:"prediction"` // from bitmex
 	Precision      Precision   `json:"precision"`
 	Limits         Limits      `json:"limits"`
@@ -113,7 +114,7 @@ type ExchangeInfo struct {
 	Urls                             map[string]interface{}
 	Api                              Apis              `json:"api"`
 	Timeframes                       map[string]string `json:"timeframes"`
-	Fees                             Fees              `json:"fees"`
+	Fees                             map[string]interface{}
 	UserAgents                       map[string]string `json:"userAgents"`
 	Header                           http.Header       `json:"header"`
 	Proxy                            string            `json:"proxy"`
@@ -574,8 +575,9 @@ type ExchangeInterfaceInternal interface {
 	Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) interface{}
 	ApiFuncDecode(function string) (path string, api string, method string)
 	ApiFunc(function string, params interface{}, headers map[string]interface{}, body interface{}) (response map[string]interface{})
-	Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response map[string]interface{})
-	Request(path string, api string, method string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (response map[string]interface{})
+	ApiFuncReturnList(function string, params interface{}, headers map[string]interface{}, body interface{}) (response []interface{})
+	Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response interface{})
+	Request(path string, api string, method string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (response interface{})
 	Describe() []byte
 	ParseOrder(interface{}, interface{}) map[string]interface{}
 	HandleErrors(code int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{})
@@ -698,6 +700,18 @@ func MarketFromMap(o interface{}) *Market {
 			if precisionMap["price"] != nil {
 				p.Precision.Price = int(precisionMap["price"].(float64))
 			}
+		}
+		if m["spot"] != nil {
+			p.Spot = m["spot"].(bool)
+		}
+		if m["futures"] != nil {
+			p.Future = m["futures"].(bool)
+		}
+		if m["swap"] != nil {
+			p.Swap = m["swap"].(bool)
+		}
+		if m["option"] != nil {
+			p.Option = m["option"].(bool)
 		}
 	}
 
@@ -846,7 +860,7 @@ func (self *Exchange) Request(
 	params map[string]interface{},
 	headers map[string]interface{},
 	body interface{},
-) (response map[string]interface{}) {
+) (response interface{}) {
 	signInfo := self.Child.Sign(path, api, method, params, headers, body)
 	return self.Child.Fetch(
 		self.Member(signInfo, "url").(string),
@@ -864,7 +878,7 @@ func (self *Exchange) PrepareRequestHeaders(req *http.Request, headers map[strin
 	}
 }
 
-func (self *Exchange) Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response map[string]interface{}) {
+func (self *Exchange) Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response interface{}) {
 	var rbody []byte
 	if body != nil {
 		switch body.(type) {
@@ -986,7 +1000,20 @@ func (self *Exchange) ApiFuncDecode(function string) (path string, api string, m
 
 func (self *Exchange) ApiFunc(function string, params interface{}, headers map[string]interface{}, body interface{}) (result map[string]interface{}) {
 	path, api, method := self.Child.ApiFuncDecode(function)
-	return self.Child.Request(path, api, method, params.(map[string]interface{}), headers, body)
+	return self.Child.Request(path, api, method, params.(map[string]interface{}), headers, body).(map[string]interface{})
+}
+
+func (self *Exchange) ApiFuncReturnList(function string, params interface{}, headers map[string]interface{}, body interface{}) (result []interface{}) {
+	path, api, method := self.Child.ApiFuncDecode(function)
+	return self.Child.Request(path, api, method, params.(map[string]interface{}), headers, body).([]interface{})
+}
+
+func (self *Exchange) Parse8601(x string) int64 {
+	t, err := time.Parse(time.RFC3339, "2017-08-14T10:00:00-0500")
+	if err != nil {
+		self.RaiseInternalException("Parse8601 " + x + " err!")
+	}
+	return t.Unix()
 }
 
 func (self *Exchange) Iso8601(milliseconds int64) string {
@@ -1243,6 +1270,10 @@ func (self *Exchange) SafeString2(d interface{}, key1 string, key2 string, defau
 	return self.SafeEither(d, key1, key2, defaultVal).(string)
 }
 
+func (self *Exchange) SafeValue2(d interface{}, key1 string, key2 string, defaultVal interface{}) interface{} {
+	return self.SafeEither(d, key1, key2, defaultVal)
+}
+
 func (self *Exchange) SafeEither(d interface{}, key1 string, key2 string, defaultVal interface{}) interface{} {
 	if d, ok := d.(map[string]interface{}); ok {
 		if val, ok := d[key1]; ok {
@@ -1255,8 +1286,18 @@ func (self *Exchange) SafeEither(d interface{}, key1 string, key2 string, defaul
 	return defaultVal
 }
 
+func (self *Exchange) NumberToString(v interface{}) string {
+	return fmt.Sprintf("%v", v)
+}
+
 func (self *Exchange) SafeString(d interface{}, key string, defaultVal interface{}) string {
 	if d, ok := d.(map[string]interface{}); ok {
+		val := d[key]
+		if val != nil {
+			return fmt.Sprintf("%v", val)
+		}
+	}
+	if d, ok := d.([]string); ok {
 		val := d[key]
 		if val != nil {
 			return fmt.Sprintf("%v", val)
@@ -1950,6 +1991,9 @@ func (self *Exchange) InitDescribe() (err error) {
 	self.Exceptions = self.DescribeMap["exceptions"].(map[string]interface{})
 	if hostName, ok := self.DescribeMap["hostname"]; ok {
 		self.Hostname = hostName.(string)
+	}
+	if fees, ok := self.DescribeMap["fees"]; ok {
+		self.Fees = fees.(map[string]interface{})
 	}
 	self.CommonCurrencies = map[string]string{
 		"XBT": "BTC",
