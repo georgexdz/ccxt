@@ -1287,7 +1287,7 @@ func (self *Exchange) SafeEither(d interface{}, key1 string, key2 string, defaul
 }
 
 func (self *Exchange) NumberToString(v interface{}) string {
-	return fmt.Sprintf("%v", v)
+	return NumberToString(v.(float64))
 }
 
 func (self *Exchange) SafeString(d interface{}, key string, defaultVal interface{}) string {
@@ -1298,8 +1298,8 @@ func (self *Exchange) SafeString(d interface{}, key string, defaultVal interface
 		}
 	}
 	if d, ok := d.([]string); ok {
-		val := d[key]
-		if val != nil {
+		if idx, err := strconv.Atoi(key); err != nil {
+			val := d[idx]
 			return fmt.Sprintf("%v", val)
 		}
 	}

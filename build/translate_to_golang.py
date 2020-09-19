@@ -20,8 +20,8 @@ CODE_INFO = {}
 def get_ex_list():
     return [
         # 'kucoin',
-        'huobipro',
-        # 'okex',
+        # 'huobipro',
+        'okex',
         # 'bitmax',
         # 'binance'
     ]
@@ -61,7 +61,10 @@ FUNC_LIST = [
     'createOrder', 'fetchOrder', 'parseOrder', 'fetchBalance',
     'fetchOrdersByStatus', 'fetchOrdersByState', 'fetchMarkets',
     'fetchCurrencies', 'handleErrors', 'fetchAccounts',
-    'parseOrderStatus', 'fetchOrdersByStates'
+    'parseOrderStatus', 'fetchOrdersByStates',
+    'ParseOrderSide', 'parseMarkets', 'parseMarket',
+    'fetchMarketsByType', 'getPathAuthenticationType', 'parseOrderSide',
+    'parseBalanceByType', 'parseAccountBalance', 'parseMarginBalance', 'parseFuturesBalance', 'parseSwapBalance'
 ]
 JS_PATCH_FOR_GOLAGNG_TRANSLATE = {
     'kucoin': {
@@ -155,6 +158,17 @@ FUNC_ARG_MAP = {
     'handleErrors': 'httpCode int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}',
     'fetchAccounts': 'params map[string]interface{}',
     'parseOrderStatus': 'status string',
+    'ParseOrderSide': 'side string',
+    'parseMarket': 'market interface{}',
+    'parseMarkets': 'markets []interface{}',
+    'fetchMarketsByType': 'typ string, params map[string]interface{}',
+    'getPathAuthenticationType': 'path string',
+    'parseOrderSide': 'side string',
+    'parseBalanceByType': 'typ string, response interface{}',
+    'parseAccountBalance': 'response interface{}',
+    'parseMarginBalance': 'response interface{}',
+    'parseFuturesBalance': 'response interface{}',
+    'parseSwapBalance': 'response interface{}',
 }
 RETURN_MAP = {
     'createOrder': 'result *Order, err error',
@@ -173,6 +187,17 @@ RETURN_MAP = {
     'handleErrors': '',
     'fetchAccounts': '[]interface{}',
     'parseOrderStatus': 'string',
+    'ParseOrderSide': 'string',
+    'parseMarket': 'interface{}',
+    'parseMarkets': '[] interface{}',
+    'fetchMarketsByType': '[] interface{}',
+    'getPathAuthenticationType': 'string',
+    'parseOrderSide': 'string',
+    'parseBalanceByType': 'interface{}',
+    'parseAccountBalance': 'map[string]interface{}',
+    'parseMarginBalance': 'map[string]interface{}',
+    'parseFuturesBalance': 'map[string]interface{}',
+    'parseSwapBalance': 'map[string]interface{}',
 }
 PANIC_DEAL_FUNC = [o.lower() for o in [
     'fetchOrderBook', 'fetchOpenOrders', 'cancelOrder',
@@ -472,7 +497,11 @@ def FunctionDeclaration(syntax, info={}):
 
     func_arg_str = get_arg(func_name)
     a = [tuple(pair.split(' ')) for pair in func_arg_str.split(', ')]
-    ARG_TYPE = dict(a)
+    try:
+        ARG_TYPE = dict(a)
+    except Exception as e:
+        print(str(e))
+        print(a)
     func_ret_str = get_return(func_name)
     a = [tuple(pair.split(' ')) for pair in func_ret_str.split(', ')]
     try:
@@ -688,4 +717,5 @@ def translate():
 
 if __name__ == '__main__':
     # test()
+    print(os.getcwd())
     translate()
