@@ -38,7 +38,7 @@ func TestFetchOrderBook(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ex.Verbose = false
+	ex.Verbose = true
 	loadApiKey(ex)
 	fmt.Println(ex.ApiKey)
 

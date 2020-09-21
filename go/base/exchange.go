@@ -343,6 +343,7 @@ func (o *Order) InitFromMap(m map[string]interface{}) (result *Order) {
 		if v == nil {
 			continue
 		}
+
 		switch k {
 		case "id":
 			o.Id = v.(string)
@@ -695,14 +696,17 @@ func MarketFromMap(o interface{}) *Market {
 		if m["precision"] != nil {
 			precisionMap := m["precision"].(map[string]interface{})
 			if precisionMap["amount"] != nil {
-				p.Precision.Amount = int(precisionMap["amount"].(float64))
+				p.Precision.Amount = precisionMap["amount"].(int)
 			}
 			if precisionMap["price"] != nil {
-				p.Precision.Price = int(precisionMap["price"].(float64))
+				p.Precision.Price = precisionMap["price"].(int)
 			}
 		}
 		if m["spot"] != nil {
 			p.Spot = m["spot"].(bool)
+		}
+		if m["type"] != nil {
+			p.Type = m["type"].(string)
 		}
 		if m["futures"] != nil {
 			p.Future = m["futures"].(bool)
@@ -1009,11 +1013,18 @@ func (self *Exchange) ApiFuncReturnList(function string, params interface{}, hea
 }
 
 func (self *Exchange) Parse8601(x string) int64 {
-	t, err := time.Parse(time.RFC3339, "2017-08-14T10:00:00-0500")
+	t, err := time.Parse(time.RFC3339, "2017-08-14T10:00:00.050Z")
 	if err != nil {
 		self.RaiseInternalException("Parse8601 " + x + " err!")
 	}
 	return t.Unix()
+}
+
+func (self *Exchange) Iso8601Okex(milliseconds int64) string {
+	var seconds int64
+	seconds = milliseconds / 1000
+	loc, _:= time.LoadLocation("")
+	return time.Unix(seconds, 0).In(loc).Format("2006-01-02T15:04:05.070Z")
 }
 
 func (self *Exchange) Iso8601(milliseconds int64) string {

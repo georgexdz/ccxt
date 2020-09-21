@@ -1,6 +1,7 @@
 package okex
 
 import (
+	"fmt"
 	. "github.com/georgexdz/ccxt/go/base"
 	"math"
 	"reflect"
@@ -663,7 +664,12 @@ func (self *Okex) FetchMarkets(params map[string]interface{}) []interface{} {
 	types := self.SafeValue(self.Options, "fetchMarkets", nil)
 	result := []interface{}{}
 	for i := 0; i < self.Length(types); i++ {
-		markets := self.FetchMarketsByType(self.Member(types, i).(string), params)
+		typ := self.Member(types, i).(string)
+		// TODO, pass option
+		if typ == "option" {
+			continue
+		}
+		markets := self.FetchMarketsByType(typ, params)
 		result = self.ArrayConcat(result, markets)
 	}
 	return result
@@ -717,9 +723,14 @@ func (self *Okex) ParseMarket(market interface{}) interface{} {
 	quote := self.SafeCurrencyCode(quoteId)
 	symbol := self.IfThenElse(self.ToBool(spot), base+"/"+quote, id)
 	lotSize := self.SafeFloat2(market, "lot_size", "trade_increment", 0.0)
+
+	amountPrecision := self.SafeFloat(market, "size_increment", lotSize)
+	pricePrecision :=  self.SafeFloat(market, "tick_size", 0)
 	precision := map[string]interface{}{
-		"amount": self.SafeFloat(market, "size_increment", lotSize),
-		"price":  self.SafeFloat(market, "tick_size", 0),
+		//"amount": self.SafeFloat(market, "size_increment", lotSize),
+		//"price":  self.SafeFloat(market, "tick_size", 0),
+		"amount": self.PrecisionFromString(NumberToString(amountPrecision)),
+		"price":  self.PrecisionFromString(NumberToString(pricePrecision)),
 	}
 	minAmount := self.SafeFloat2(market, "min_size", "base_min_size", 0.0)
 	active := true
@@ -745,11 +756,11 @@ func (self *Okex) ParseMarket(market interface{}) interface{} {
 				"max": nil,
 			},
 			"price": map[string]interface{}{
-				"min": self.Member(precision, "price").(float64),
+				"min": pricePrecision,
 				"max": nil,
 			},
 			"cost": map[string]interface{}{
-				"min": self.Member(precision, "price").(float64),
+				"min": pricePrecision,
 				"max": nil,
 			},
 		},
@@ -994,7 +1005,7 @@ func (self *Okex) CreateOrder(symbol string, typ string, side string, amount flo
 	self.LoadMarkets()
 	market := self.Market(symbol)
 	request := map[string]interface{}{
-		"instrument_id": self.Member(market, "id"),
+		"instrument_id": market.Id,
 	}
 	clientOrderId := self.SafeString2(params, "client_oid", "clientOrderId", "")
 	if self.ToBool(!self.TestNil(clientOrderId)) {
@@ -1024,8 +1035,11 @@ func (self *Okex) CreateOrder(symbol string, typ string, side string, amount flo
 			"margin_trading": marginTrading,
 		}).(map[string]interface{})
 		if self.ToBool(typ == "limit") {
+			// TODO:
 			self.SetValue(request, "price", self.PriceToPrecision(symbol, price))
 			self.SetValue(request, "size", self.AmountToPrecision(symbol, amount))
+			//self.SetValue(request, "price", price)
+			//self.SetValue(request, "size", amount)
 		} else if self.ToBool(typ == "market") {
 			// TODO, 市价单暂无用到先不做，涉及TICK_SIZE的decimalToPrecision，js的实现太复杂了，要翻译很麻烦
 			/*
@@ -1074,7 +1088,7 @@ func (self *Okex) CancelOrder(id string, symbol string, params map[string]interf
 	}
 	method := typ + "PostCancelOrder"
 	request := map[string]interface{}{
-		"instrument_id": self.Member(market, "id"),
+		"instrument_id": market.Id,
 	}
 	if market.Future || market.Swap {
 		method += "InstrumentId"
@@ -1091,7 +1105,7 @@ func (self *Okex) CancelOrder(id string, symbol string, params map[string]interf
 	}
 	query := self.Omit(params, []interface{}{"type", "client_oid", "clientOrderId"})
 	response = self.ApiFunc(method, self.Extend(request, query), nil, nil)
-	result := self.IfThenElse(self.ToBool(self.InMap("result", response)), response, self.SafeValue(response, self.Member(market, "id"), map[string]interface{}{}))
+	result := self.IfThenElse(self.ToBool(self.InMap("result", response)), response, self.SafeValue(response, market.Id, map[string]interface{}{}))
 	return self.ParseOrder(result, market), nil
 }
 
@@ -1144,6 +1158,7 @@ func (self *Okex) ParseOrder(order interface{}, market interface{}) (result map[
 	if self.ToBool(!self.TestNil(market)) {
 		if self.ToBool(self.TestNil(symbol)) {
 			symbol = self.Member(market, "symbol")
+			symbol = market.(*Market).Symbol
 		}
 	}
 	amount := self.SafeFloat(order, "size", 0)
@@ -1295,7 +1310,7 @@ func (self *Okex) GetPathAuthenticationType(path string) string {
 	if path == "underlying" {
 		return "public"
 	}
-	auth := self.SafeString(self.Options, "auth", "")
+	auth := self.SafeValue(self.Options, "auth", "")
 	key := self.FindBroadlyMatchedKey(auth, path)
 	return self.SafeString(auth, key, "private")
 }
@@ -1315,7 +1330,7 @@ func (self *Okex) Sign(path string, api string, method string, params map[string
 		}
 	} else if self.ToBool(typ == "private") {
 		self.CheckRequiredCredentials()
-		timestamp := self.Iso8601(self.Milliseconds())
+		timestamp := self.Iso8601Okex(self.Milliseconds())
 		headers = map[string]interface{}{
 			"OK-ACCESS-KEY":        self.ApiKey,
 			"OK-ACCESS-PASSPHRASE": self.Password,
@@ -1347,6 +1362,7 @@ func (self *Okex) Sign(path string, api string, method string, params map[string
 }
 
 func (self *Okex) HandleErrors(httpCode int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}) {
+	fmt.Println(response)
 	feedback := self.Id + " " + body
 	if self.ToBool(httpCode == 503) {
 		self.RaiseException("ExchangeNotAvailable", feedback)
