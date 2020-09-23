@@ -1599,7 +1599,11 @@ func (self *Exchange) SetValue(x interface{}, k string, v interface{}) {
 }
 
 func (self *Exchange) CheckRequiredCredentials() {
+}
 
+func (self *Exchange) UrlencodeWithArrayRepeat(i interface{}) string {
+	re := regexp.MustCompile(`%5B\d*%5D`)
+	return re.ReplaceAllString(self.Urlencode(i), "")
 }
 
 func (self *Exchange) Urlencode(i interface{}) string {
@@ -1912,6 +1916,15 @@ func (self *Exchange) IndexBy(x interface{}, k string) map[string]interface{} {
 		}
 	}
 	return out
+}
+
+func (self *Exchange) InArray(a string, list []string) bool {
+    for _, b := range list {
+        if b == a {
+            return true
+        }
+    }
+    return false
 }
 
 func (self *Exchange) FetchAccounts(params map[string]interface{}) []interface{} {
