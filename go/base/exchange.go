@@ -691,8 +691,12 @@ func MarketFromMap(o interface{}) *Market {
 		p.Base = m["base"].(string)
 		p.Quote = m["quote"].(string)
 		p.BaseId = m["baseId"].(string)
-		p.Taker = m["taker"].(float64)
-		p.Maker = m["maker"].(float64)
+		if m["taker"] != nil {
+			p.Taker = m["taker"].(float64)
+		}
+		if m["maker"] != nil {
+			p.Maker = m["maker"].(float64)
+		}
 		if m["precision"] != nil {
 			precisionMap := m["precision"].(map[string]interface{})
 			if precisionMap["amount"] != nil {
@@ -832,7 +836,8 @@ func (self *Exchange) LoadMarkets() map[string]*Market {
 	}
 
 	var currencies map[string]interface{}
-	if self.DescribeMap["has"].(map[string]interface{})["fetchCurrencies"].(bool) {
+	hasfetchCurrencies := self.DescribeMap["has"].(map[string]interface{})["fetchCurrencies"]
+	if hasfetchCurrencies != nil && hasfetchCurrencies.(bool) {
 		 currencies = self.Child.FetchCurrencies(map[string]interface{}{})
 	}
 
@@ -1199,17 +1204,23 @@ func (self *Exchange) SafeValue(m interface{}, key interface{}, args ...interfac
 	if len(args) > 0 {
 		def = args[0]
 	}
-	if mm, ok := m.(map[string]interface{}); ok {
-		if val, ok := mm[key.(string)]; ok {
-			return val
+
+	switch key.(type) {
+	case string:
+		if mm, ok := m.(map[string]interface{}); ok {
+			if val, ok := mm[key.(string)]; ok {
+				 return val
+			}
+		}
+	case int, int64, int8, int32:
+		if li, ok := m.([]interface{}); ok {
+			idx := int(ToInteger(key))
+			if idx >= 0 && idx < len(li) {
+				return li[idx]
+			}
 		}
 	}
-	if li, ok := m.([]interface{}); ok {
-		idx := int(ToInteger(key))
-		if idx >= 0 && idx < len(li) {
-			return li[idx]
-		}
-	}
+
 	return def
 }
 
@@ -1305,6 +1316,12 @@ func (self *Exchange) SafeString(d interface{}, key string, defaultVal interface
 	if d, ok := d.(map[string]interface{}); ok {
 		val := d[key]
 		if val != nil {
+			switch val.(type) {
+			case int:
+				return strconv.Itoa(val.(int))
+			case int64:
+				return strconv.FormatInt(val.(int64),10)
+			}
 			return fmt.Sprintf("%v", val)
 		}
 	}
@@ -2011,7 +2028,9 @@ func (self *Exchange) InitDescribe() (err error) {
 
 	self.Options = self.DescribeMap["options"].(map[string]interface{})
 	self.Urls = self.DescribeMap["urls"].(map[string]interface{})
-	self.Version = self.DescribeMap["version"].(string)
+	if self.DescribeMap["version"] != nil {
+		self.Version = self.DescribeMap["version"].(string)
+	}
 	self.Exceptions = self.DescribeMap["exceptions"].(map[string]interface{})
 	if hostName, ok := self.DescribeMap["hostname"]; ok {
 		self.Hostname = hostName.(string)

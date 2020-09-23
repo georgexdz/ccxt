@@ -58,7 +58,7 @@ func TestFetchOrderBook(t *testing.T) {
 	log.Println("##### FetchBalance:", ex.Json(balance))
 
 	// @ CreateOrder
-	order, err := ex.CreateOrder("BTC/USDT", "limit", "buy", 0.001, 8000., nil)
+	order, err := ex.CreateOrder("BTC/USDT", "limit", "buy", 0.002, 8000., nil)
 	if err != nil {
 		t.Fatal(err)
 	}
