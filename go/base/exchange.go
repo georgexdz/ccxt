@@ -2074,5 +2074,7 @@ func (self *Exchange) Ymdhms(m int64, t string) string {
 }
 
 func (self *Exchange) CommonCurrencyCode(currency string) string {
-	return self.SafeString(self.CommonCurrencies, currency, currency)
+	//return self.SafeString(self.CommonCurrencies, currency, currency)
+	// NOTE: 我们不需要 CommonCurrencyCode 功能
+	return currency
 }
