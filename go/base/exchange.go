@@ -24,8 +24,8 @@ import (
 	"net/url"
 	"reflect"
 	"regexp"
-	"syscall"
 	"sync"
+	"syscall"
 
 	"runtime/debug"
 	"sort"
@@ -48,21 +48,21 @@ type SignInfo struct {
 
 // Market struct
 type Market struct {
-	Id             string      `json:"id"`     // exchange specific
-	Symbol         string      `json:"symbol"` // ccxt unified
-	Base           string      `json:"base"`
-	BaseNumericId  string      `json:"baseNumericId"`
-	Quote          string      `json:"quote"`
-	QuoteNumericId string      `json:"quoteNumericId"`
-	BaseId         string      `json:"baseId"`     // from bitmex
-	QuoteId        string      `json:"quoteId"`    // from bitmex
-	Active         bool        `json:"active"`     // from bitmex
-	Taker          float64     `json:"taker"`      // from bitmex
-	Maker          float64     `json:"maker"`      // from bitmex
-	Type           string      `json:"type"`       // from bitmex
-	Spot           bool        `json:"spot"`       // from bitmex
-	Swap           bool        `json:"swap"`       // from bitmex
-	Future         bool        `json:"future"`     // from bitmex
+	Id             string  `json:"id"`     // exchange specific
+	Symbol         string  `json:"symbol"` // ccxt unified
+	Base           string  `json:"base"`
+	BaseNumericId  string  `json:"baseNumericId"`
+	Quote          string  `json:"quote"`
+	QuoteNumericId string  `json:"quoteNumericId"`
+	BaseId         string  `json:"baseId"`  // from bitmex
+	QuoteId        string  `json:"quoteId"` // from bitmex
+	Active         bool    `json:"active"`  // from bitmex
+	Taker          float64 `json:"taker"`   // from bitmex
+	Maker          float64 `json:"maker"`   // from bitmex
+	Type           string  `json:"type"`    // from bitmex
+	Spot           bool    `json:"spot"`    // from bitmex
+	Swap           bool    `json:"swap"`    // from bitmex
+	Future         bool    `json:"future"`  // from bitmex
 	Option         bool
 	Prediction     bool        `json:"prediction"` // from bitmex
 	Precision      Precision   `json:"precision"`
@@ -124,7 +124,7 @@ type ExchangeInfo struct {
 	Precision                        Precision         `json:"precision"`
 	Exceptions                       map[string]interface{}
 	DontGetUsedBalanceFromStaleCache bool `json:"dontGetUsedBalanceFromStaleCache"`
-	CommonCurrencies map[string]string
+	CommonCurrencies                 map[string]string
 }
 
 // Apis public and private methods
@@ -608,7 +608,7 @@ type Exchange struct {
 	DescribeMap    map[string]interface{}
 	Options        map[string]interface{}
 	httpExceptions map[string]string
-	Hostname	string
+	Hostname       string
 }
 
 func (self *Exchange) Init(config *ExchangeConfig) (err error) {
@@ -840,7 +840,7 @@ func (self *Exchange) LoadMarkets() map[string]*Market {
 	var currencies map[string]interface{}
 	hasfetchCurrencies := self.DescribeMap["has"].(map[string]interface{})["fetchCurrencies"]
 	if hasfetchCurrencies != nil && hasfetchCurrencies.(bool) {
-		 currencies = self.Child.FetchCurrencies(map[string]interface{}{})
+		currencies = self.Child.FetchCurrencies(map[string]interface{}{})
 	}
 
 	markets := self.Child.FetchMarkets(nil)
@@ -856,9 +856,9 @@ func (self *Exchange) LoadAccounts() []interface{} {
 	accounts := self.Child.FetchAccounts(nil)
 	for _, account := range accounts {
 		one := map[string]interface{}{
-			"id": int64(account.(map[string]interface{})["id"].(float64)),
+			"id":    int64(account.(map[string]interface{})["id"].(float64)),
 			"state": account.(map[string]interface{})["state"].(string),
-			"type": account.(map[string]interface{})["type"].(string),
+			"type":  account.(map[string]interface{})["type"].(string),
 		}
 		self.Accounts = append(self.Accounts, one)
 	}
@@ -1022,7 +1022,7 @@ func (self *Exchange) ApiFuncReturnList(function string, params interface{}, hea
 }
 
 func (self *Exchange) Parse8601(x string) int64 {
-	t, err := time.Parse(time.RFC3339, "2017-08-14T10:00:00.050Z")
+	t, err := time.Parse(time.RFC3339, x)
 	if err != nil {
 		self.RaiseInternalException("Parse8601 " + x + " err!")
 	}
@@ -1032,7 +1032,7 @@ func (self *Exchange) Parse8601(x string) int64 {
 func (self *Exchange) Iso8601Okex(milliseconds int64) string {
 	var seconds int64
 	seconds = milliseconds / 1000
-	loc, _:= time.LoadLocation("")
+	loc, _ := time.LoadLocation("")
 	return time.Unix(seconds, 0).In(loc).Format("2006-01-02T15:04:05.070Z")
 }
 
@@ -1043,7 +1043,7 @@ func (self *Exchange) Iso8601(milliseconds int64) string {
 }
 
 func (self *Exchange) Milliseconds() int64 {
-	return time.Now().Unix() * 1000
+	return time.Now().UnixNano() / 1000000
 }
 
 // Exchanges returns the available exchanges
@@ -1213,7 +1213,7 @@ func (self *Exchange) SafeValue(m interface{}, key interface{}, args ...interfac
 	case string:
 		if mm, ok := m.(map[string]interface{}); ok {
 			if val, ok := mm[key.(string)]; ok {
-				 return val
+				return val
 			}
 		}
 	case int, int64, int8, int32:
@@ -1324,7 +1324,7 @@ func (self *Exchange) SafeString(d interface{}, key string, defaultVal interface
 			case int:
 				return strconv.Itoa(val.(int))
 			case int64:
-				return strconv.FormatInt(val.(int64),10)
+				return strconv.FormatInt(val.(int64), 10)
 			}
 			return fmt.Sprintf("%v", val)
 		}
@@ -1940,12 +1940,12 @@ func (self *Exchange) IndexBy(x interface{}, k string) map[string]interface{} {
 }
 
 func (self *Exchange) InArray(a string, list []string) bool {
-    for _, b := range list {
-        if b == a {
-            return true
-        }
-    }
-    return false
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
 }
 
 func (self *Exchange) FetchAccounts(params map[string]interface{}) []interface{} {
@@ -2043,11 +2043,11 @@ func (self *Exchange) InitDescribe() (err error) {
 		self.Fees = fees.(map[string]interface{})
 	}
 	self.CommonCurrencies = map[string]string{
-		"XBT": "BTC",
-        "BCC": "BCH",
-        "DRK": "DASH",
-        "BCHABC": "BCH",
-        "BCHSV": "BSV",
+		"XBT":    "BTC",
+		"BCC":    "BCH",
+		"DRK":    "DASH",
+		"BCHABC": "BCH",
+		"BCHSV":  "BSV",
 	}
 
 	return
@@ -2068,11 +2068,11 @@ func (self *Exchange) BaseUrl() string {
 }
 
 func (self *Exchange) Ymdhms(m int64, t string) string {
-    local1, _:= time.LoadLocation("") //等同于"UTC"
-	unixTimeUTC:=time.Unix(m/1000, 0).In(local1) //gives unix time stamp in utc
+	local1, _ := time.LoadLocation("")             //等同于"UTC"
+	unixTimeUTC := time.Unix(m/1000, 0).In(local1) //gives unix time stamp in utc
 	return unixTimeUTC.Format(fmt.Sprintf("2006-01-02%v15:04:05", t))
 }
 
-func (self *Exchange) CommonCurrencyCode (currency string) string {
+func (self *Exchange) CommonCurrencyCode(currency string) string {
 	return self.SafeString(self.CommonCurrencies, currency, currency)
 }
