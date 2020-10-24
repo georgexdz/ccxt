@@ -1032,8 +1032,7 @@ func (self *Exchange) Parse8601(x string) int64 {
 func (self *Exchange) Iso8601Okex(milliseconds int64) string {
 	var seconds int64
 	seconds = milliseconds / 1000
-	loc, _ := time.LoadLocation("")
-	return time.Unix(seconds, 0).In(loc).Format("2006-01-02T15:04:05.070Z")
+	return time.Unix(seconds, 0).In(time.UTC).Format("2006-01-02T15:04:05.070Z")
 }
 
 func (self *Exchange) Iso8601(milliseconds int64) string {
@@ -2068,8 +2067,7 @@ func (self *Exchange) BaseUrl() string {
 }
 
 func (self *Exchange) Ymdhms(m int64, t string) string {
-	local1, _ := time.LoadLocation("")             //等同于"UTC"
-	unixTimeUTC := time.Unix(m/1000, 0).In(local1) //gives unix time stamp in utc
+	unixTimeUTC := time.Unix(m/1000, 0).In(time.UTC) // gives unix time stamp in utc
 	return unixTimeUTC.Format(fmt.Sprintf("2006-01-02%v15:04:05", t))
 }
 
