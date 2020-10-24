@@ -1,12 +1,9 @@
-
-    
-    package okex
+package okex
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	. "github.com/georgexdz/ccxt/go/base"
+	"math"
 	"reflect"
 	"strings"
 )
@@ -22,43 +19,14 @@ func New(config *ExchangeConfig) (ex *Okex, err error) {
 
 	err = ex.InitDescribe()
 	if err != nil {
+		ex = nil
 		return
 	}
 
 	return
 }
 
-func (self *Okex) InitDescribe() (err error) {
-	err = json.Unmarshal(self.Child.Describe(), &self.DescribeMap)
-	if err != nil {
-		return
-	}
-
-	err = self.DefineRestApi()
-	if err != nil {
-		return
-	}
-
-	publicUrl, err := NestedMapLookup(self.DescribeMap, "urls", "api", "public")
-	if err != nil {
-		return
-	}
-	privateUrl, err := NestedMapLookup(self.DescribeMap, "urls", "api", "private")
-	if err != nil {
-		return
-	}
-	self.ApiUrls = map[string]string{
-		"private": privateUrl.(string),
-		"public":  publicUrl.(string),
-	}
-
-	self.Options = self.DescribeMap["options"].(map[string]interface{})
-	self.Urls = self.DescribeMap["urls"].(map[string]interface{})
-	return
-}
-
-    
-    func (self *Okex) Describe() []byte {
+func (self *Okex) Describe() []byte {
 	return []byte(`{
     "id": "okex",
     "name": "OKEX",
@@ -690,543 +658,728 @@ func (self *Okex) InitDescribe() (err error) {
         "WIN": "WinToken"
     }
 }`)
+}
+
+func (self *Okex) FetchMarkets(params map[string]interface{}) []interface{} {
+	types := self.SafeValue(self.Options, "fetchMarkets", nil)
+	result := []interface{}{}
+	for i := 0; i < self.Length(types); i++ {
+		typ := self.Member(types, i).(string)
+		// TODO, pass option
+		if typ == "option" {
+			continue
+		}
+		markets := self.FetchMarketsByType(typ, params)
+		result = self.ArrayConcat(result, markets)
 	}
-	
-    func (self *Okex) FetchMarkets (params map[string]interface{}) (ret interface{}, err error) {
-    
-types := self.SafeValue(self.Options,"fetchMarkets", nil)
-
-result := []interface{}{}
-
-for i := 0; i < self.Length(types); i++ {
-markets := self.FetchMarketsByType(self.Member(types, i),params)
-result = self.ArrayConcat(result,markets)
-}
-
-return result, nil
-
-}
-    
-func (self *Okex) FetchCurrencies (params map[string]interface{}) (ret interface{}, err error) {
-    
-response := self.AccountGetCurrencies(params)
-
-result := map[string]interface{}{
-}
-
-for i := 0; i < self.Length(response); i++ {
-currency := self.Member(response, i)
-id := self.SafeString(currency,"currency", "")
-code := self.SafeCurrencyCode(id)
-precision := 8
-name := self.SafeString(currency,"name", "")
-canDeposit := self.SafeInteger(currency,"can_deposit", 0)
-canWithdraw := self.SafeInteger(currency,"can_withdraw", 0)
-active := canDeposit && canWithdraw
-self.SetValue(result, code, map[string]interface{}{
-"id": id,
-"code": code,
-"info": currency,
-"type": nil,
-"name": name,
-"active": active,
-"fee": nil,
-"precision": precision,
-"limits": map[string]interface{}{
-"amount": map[string]interface{}{
-"min": nil,
-"max": nil,
-},
-"price": map[string]interface{}{
-"min": nil,
-"max": nil,
-},
-"cost": map[string]interface{}{
-"min": nil,
-"max": nil,
-},
-"withdraw": map[string]interface{}{
-"min": self.SafeFloat(currency,"min_withdrawal", 0),
-"max": nil,
-},
-},
-})
-}
-
-return result, nil
-
-}
-    
-func (self *Okex) FetchOrderBook (symbol string, limit int64, params map[string]interface{}) (orderBook interface{}, err error) {
-    
-_, err = self.LoadMarkets()
- if err != nil {
- return 
-}
-
-market := self.Market(symbol)
-
-method := self.Member(market, "type") + "GetInstrumentsInstrumentId"
-
-method += self.IfThenElse(self.ToBool(self.Member(market, "type") == "swap"), "Depth", "Book")
-
-request := map[string]interface{}{
-"instrument_id": self.Member(market, "id"),
-}
-
-if self.ToBool(!self.TestNil(limit)) {
-self.SetValue(request, "size", limit)
-}
-
-response := self.Method(self.Extend(request,params))
-
-timestamp := self.Parse8601(self.SafeString(response,"timestamp", ""))
-
-return self.ParseOrderBook(response,timestamp), nil
-
-}
-    
-func (self *Okex) FetchBalance (params map[string]interface{}) (balanceResult *Account, err error) {
-    
-defaultType := self.SafeString2(self.Options,"fetchBalance","defaultType")
-
-typ := self.SafeString(params,"type",defaultType)
-
-if self.ToBool(self.TestNil(typ)) {
-err = errors.New(self.Id + " fetchBalance requires a type parameter (one of "account", "spot", "margin", "futures", "swap")");
-return
-}
-
-_, err = self.LoadMarkets()
- if err != nil {
- return 
-}
-
-suffix := self.IfThenElse(self.ToBool(typ == "account"), "Wallet", "Accounts")
-
-method := typ + "Get" + suffix
-
-query := self.Omit(params,"type")
-
-response := self.Method(query)
-
-return self.ParseBalanceByType(typ,response), nil
-
-}
-    
-func (self *Okex) CreateOrder (symbol string, typ string, side string, amount float64, price float64, params map[string]interface{}) (order map[string]interface{}, err error) {
-    
-_, err = self.LoadMarkets()
- if err != nil {
- return 
-}
-
-market := self.Market(symbol)
-
-request := map[string]interface{}{
-"instrument_id": self.Member(market, "id"),
-}
-
-clientOrderId := self.SafeString2(params,"client_oid","clientOrderId")
-
-if self.ToBool(!self.TestNil(clientOrderId)) {
-self.SetValue(request, "client_oid", clientOrderId)
-params = self.Omit(params,[]interface{}{"client_oid","clientOrderId"})
-}
-
-var method interface{}
-
-if self.ToBool(self.Member(market, "futures") || self.Member(market, "swap")) {
-size := self.IfThenElse(self.ToBool(self.Member(market, "futures")), self.NumberToString(amount), self.AmountToPrecision(symbol,amount))
-request = self.Extend(request,map[string]interface{}{
-"type": typ,
-"size": size,
-"price": self.PriceToPrecision(symbol,price),
-})
-if self.ToBool(self.Member(market, "futures")) {
-self.SetValue(request, "leverage", "10")
-}
-method = self.Member(market, "type") + "PostOrder"
-} else {
-marginTrading := self.SafeString(params,"margin_trading","1")
-request = self.Extend(request,map[string]interface{}{
-"side": side,
-"type": typ,
-"margin_trading": marginTrading,
-})
-if self.ToBool(typ == "limit") {
-self.SetValue(request, "price", self.PriceToPrecision(symbol,price))
-self.SetValue(request, "size", self.AmountToPrecision(symbol,amount))
-} else if self.ToBool(typ == "market") {
-if self.ToBool(side == "buy") {
-notional := self.SafeFloat(params,"notional", 0)
-createMarketBuyOrderRequiresPrice := self.SafeValue(self.Options,"createMarketBuyOrderRequiresPrice",true)
-if self.ToBool(createMarketBuyOrderRequiresPrice) {
-if self.ToBool(!self.TestNil(price)) {
-if self.ToBool(self.TestNil(notional)) {
-notional = amount * price
-}
-} else if self.ToBool(self.TestNil(notional)) {
-err = errors.New(self.Id + " createOrder() requires the price argument with market buy orders to calculate total order cost (amount to spend), where cost = amount * price. Supply a price argument to createOrder() call if you want the cost to be calculated for you from price and amount, or, alternatively, add .options["createMarketBuyOrderRequiresPrice"] = false and supply the total cost value in the "amount" argument or in the "notional" extra parameter (the exchange-specific behaviour)");
-return
-}
-} else {
-notional = self.IfThenElse(self.ToBool(self.TestNil(notional)), amount, notional)
-}
-precision := self.Member(self.Member(market, "precision"), "price")
-self.SetValue(request, "notional", self.DecimalToPrecision(notional,TRUNCATE,precision,self.PrecisionMode))
-} else {
-self.SetValue(request, "size", self.AmountToPrecision(symbol,amount))
-}
-}
-method = self.IfThenElse(self.ToBool(marginTrading == "2"), "marginPostOrders", "spotPostOrders")
-}
-
-response := self.Method(self.Extend(request,params))
-
-return self.ParseOrder(response,market), nil
-
-}
-    
-func (self *Okex) CancelOrder (id string, symbol string, params map[string]interface{}) (response interface{}, err error) {
-    
-if self.ToBool(self.TestNil(symbol)) {
-err = errors.New(self.Id + " cancelOrder() requires a symbol argument");
-return
-}
-
-_, err = self.LoadMarkets()
- if err != nil {
- return 
-}
-
-market := self.Market(symbol)
-
-defaultType := self.SafeString2(self.Options,"cancelOrder","defaultType",self.Member(market, "type"))
-
-typ := self.SafeString(params,"type",defaultType)
-
-if self.ToBool(self.TestNil(typ)) {
-err = errors.New(self.Id + " cancelOrder requires a type parameter (one of "spot", "margin", "futures", "swap").");
-return
-}
-
-method := typ + "PostCancelOrder"
-
-request := map[string]interface{}{
-"instrument_id": self.Member(market, "id"),
-}
-
-if self.ToBool(self.Member(market, "futures") || self.Member(market, "swap")) {
-method += "InstrumentId"
-} else {
-method += "s"
-}
-
-clientOrderId := self.SafeString2(params,"client_oid","clientOrderId")
-
-if self.ToBool(!self.TestNil(clientOrderId)) {
-method += "ClientOid"
-self.SetValue(request, "client_oid", clientOrderId)
-} else {
-method += "OrderId"
-self.SetValue(request, "order_id", id)
-}
-
-query := self.Omit(params,[]interface{}{"type","client_oid","clientOrderId"})
-
-response = self.Method(self.Extend(request,query))
-
-result := self.IfThenElse(self.ToBool(self.InMap("result", response)), response, self.SafeValue(response,self.Member(market, "id"),map[string]interface{}{
-}))
-
-return self.ParseOrder(result,market), nil
-
-}
-    
-func (self *Okex) ParseOrder (order interface{}, market interface{}) (result interface{}) {
-    
-id := self.SafeString(order,"order_id", "")
-
-timestamp := self.Parse8601(self.SafeString(order,"timestamp", ""))
-
-side := self.SafeString(order,"side", "")
-
-typ := self.SafeString(order,"type", "")
-
-if self.ToBool(side != "buy" && side != "sell") {
-side = self.ParseOrderSide(typ)
-}
-
-if self.ToBool(typ != "limit" && typ != "market") {
-if self.ToBool(self.InMap("pnl", order)) {
-typ = "futures"
-} else {
-typ = "swap"
-}
-}
-
-var symbol interface{}
-
-marketId := self.SafeString(order,"instrument_id", "")
-
-if self.ToBool(self.InMap(marketId, self.MarketsById)) {
-market = self.Member(self.MarketsById, marketId)
-symbol = self.Member(market, "symbol")
-} else {
-symbol = marketId
+	return result
+}
+
+func (self *Okex) ParseMarkets(markets []interface{}) []interface{} {
+	result := []interface{}{}
+	for i := 0; i < self.Length(markets); i++ {
+		result = append(result, self.ParseMarket(self.Member(markets, i)))
+	}
+	return result
+}
+
+func (self *Okex) ParseMarket(market interface{}) interface{} {
+	id := self.SafeString(market, "instrument_id", "")
+	marketType := "spot"
+	spot := true
+	future := false
+	swap := false
+	option := false
+	baseId := self.SafeString(market, "base_currency", "")
+	quoteId := self.SafeString(market, "quote_currency", "")
+	contractVal := self.SafeFloat(market, "contract_val", 0)
+	if self.ToBool(!self.TestNil(contractVal)) {
+		if self.ToBool(self.InMap("option_type", market)) {
+			marketType = "option"
+			spot = false
+			option = true
+			underlying := self.SafeString(market, "underlying", "")
+			parts := strings.Split(underlying, "-")
+			baseId = ""
+			quoteId = ""
+			if len(parts) >= 2 {
+				baseId = parts[0]
+				quoteId = parts[1]
+			}
+		} else {
+			marketType = "swap"
+			spot = false
+			swap = true
+			futuresAlias := self.SafeString(market, "alias", "")
+			if self.ToBool(!self.TestNil(futuresAlias)) {
+				swap = false
+				future = true
+				marketType = "futures"
+				baseId = self.SafeString(market, "underlying_index", "")
+			}
+		}
+	}
+	base := self.SafeCurrencyCode(baseId)
+	quote := self.SafeCurrencyCode(quoteId)
+	symbol := self.IfThenElse(self.ToBool(spot), base+"/"+quote, id)
+	lotSize := self.SafeFloat2(market, "lot_size", "trade_increment", 0.0)
+
+	amountPrecision := self.SafeFloat(market, "size_increment", lotSize)
+	pricePrecision :=  self.SafeFloat(market, "tick_size", 0)
+	precision := map[string]interface{}{
+		//"amount": self.SafeFloat(market, "size_increment", lotSize),
+		//"price":  self.SafeFloat(market, "tick_size", 0),
+		"amount": self.PrecisionFromString(NumberToString(amountPrecision)),
+		"price":  self.PrecisionFromString(NumberToString(pricePrecision)),
+	}
+	minAmount := self.SafeFloat2(market, "min_size", "base_min_size", 0.0)
+	active := true
+	fees := self.SafeValue2(self.Fees, marketType, "trading", map[string]interface{}{}).(map[string]interface{})
+	return self.Extend(fees, map[string]interface{}{
+		"id":        id,
+		"symbol":    symbol,
+		"base":      base,
+		"quote":     quote,
+		"baseId":    baseId,
+		"quoteId":   quoteId,
+		"info":      market,
+		"type":      marketType,
+		"spot":      spot,
+		"futures":   future,
+		"swap":      swap,
+		"option":    option,
+		"active":    active,
+		"precision": precision,
+		"limits": map[string]interface{}{
+			"amount": map[string]interface{}{
+				"min": minAmount,
+				"max": nil,
+			},
+			"price": map[string]interface{}{
+				"min": pricePrecision,
+				"max": nil,
+			},
+			"cost": map[string]interface{}{
+				"min": pricePrecision,
+				"max": nil,
+			},
+		},
+	})
+}
+
+func (self *Okex) FetchMarketsByType(typ string, params map[string]interface{}) []interface{} {
+	if typ == "option" {
+		underlying := self.ApiFuncReturnList("optionGetUnderlying", params, nil, nil)
+		result := []interface{}{}
+		for i := 0; i < self.Length(underlying); i++ {
+			response := self.ApiFunc("optionGetInstrumentsUnderlying", map[string]interface{}{
+				"underlying": self.Member(underlying, i),
+			}, nil, nil)
+			result = self.ArrayConcat(result, response)
+		}
+		return self.ParseMarkets(result)
+	} else if self.ToBool(typ == "spot" || typ == "futures" || typ == "swap") {
+		method := typ + "GetInstruments"
+		response := self.ApiFuncReturnList(method, params, nil, nil)
+		return self.ParseMarkets(response)
+	} else {
+		self.RaiseException("NotSupported", self.Id+" fetchMarketsByType does not support market type "+typ)
+	}
+
+	return nil
+}
+
+func (self *Okex) FetchCurrencies(params map[string]interface{}) map[string]interface{} {
+	response := self.ApiFunc("accountGetCurrencies", params, nil, nil)
+	result := map[string]interface{}{}
+	for i := 0; i < self.Length(response); i++ {
+		currency := self.Member(response, i)
+		id := self.SafeString(currency, "currency", "")
+		code := self.SafeCurrencyCode(id)
+		precision := 8
+		name := self.SafeString(currency, "name", "")
+		canDeposit := self.SafeInteger(currency, "can_deposit", 0)
+		canWithdraw := self.SafeInteger(currency, "can_withdraw", 0)
+		active := false
+		if canDeposit != 0 && canWithdraw != 0 {
+			active = true
+		}
+		self.SetValue(result, code, map[string]interface{}{
+			"id":        id,
+			"code":      code,
+			"info":      currency,
+			"type":      nil,
+			"name":      name,
+			"active":    active,
+			"fee":       nil,
+			"precision": precision,
+			"limits": map[string]interface{}{
+				"amount": map[string]interface{}{
+					"min": nil,
+					"max": nil,
+				},
+				"price": map[string]interface{}{
+					"min": nil,
+					"max": nil,
+				},
+				"cost": map[string]interface{}{
+					"min": nil,
+					"max": nil,
+				},
+				"withdraw": map[string]interface{}{
+					"min": self.SafeFloat(currency, "min_withdrawal", 0),
+					"max": nil,
+				},
+			},
+		})
+	}
+	return result
+}
+
+func (self *Okex) FetchOrderBook(symbol string, limit int64, params map[string]interface{}) (orderBook *OrderBook, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	self.LoadMarkets()
+	market := self.Market(symbol)
+	method := market.Type + "GetInstrumentsInstrumentId"
+	if market.Type == "swap" {
+		method += "Depth"
+	} else {
+		method += "Book"
+	}
+	request := map[string]interface{}{
+		"instrument_id": self.Member(market, "id"),
+	}
+	if self.ToBool(!self.TestNil(limit)) {
+		self.SetValue(request, "size", limit)
+	}
+	response := self.ApiFunc(method, self.Extend(request, params), nil, nil)
+	timestamp := self.Parse8601(self.SafeString(response, "timestamp", ""))
+	return self.ParseOrderBook(response, timestamp, "bids", "asks", 0, 1), nil
+}
+
+func (self *Okex) ParseAccountBalance(response interface{}) *Account {
+	result := map[string]interface{}{
+		"info": response,
+	}
+	for i := 0; i < self.Length(response); i++ {
+		balance := self.Member(response, i)
+		currencyId := self.SafeString(balance, "currency", "")
+		code := self.SafeCurrencyCode(currencyId)
+		account := self.Account()
+		self.SetValue(account, "total", self.SafeFloat(balance, "balance", 0))
+		self.SetValue(account, "used", self.SafeFloat(balance, "hold", 0))
+		self.SetValue(account, "free", self.SafeFloat(balance, "available", 0))
+		self.SetValue(result, code, account)
+	}
+	return self.ParseBalance(result)
+}
+
+/*
+TODO: 杠杆现货暂不支持，因为返回的格式不是Account类型，难以兼容
+func (self *Okex) ParseMarginBalance(response interface{}) *Account {
+	result := map[string]interface{}{
+		"info": response,
+	}
+	for i := 0; i < self.Length(response); i++ {
+		balance := self.Member(response, i).(map[string]interface{})
+		marketId := self.SafeString(balance, "instrument_id", "")
+		market := self.SafeValue(self.MarketsById, marketId, nil)
+		var symbol interface{}
+		if self.ToBool(self.TestNil(market)) {
+			baseId, quoteId := self.Unpack2(strings.Split(marketId, "-"))
+			base := self.SafeCurrencyCode(baseId)
+			quote := self.SafeCurrencyCode(quoteId)
+			symbol = base + "/" + quote
+		} else {
+			symbol = self.Member(market, "symbol")
+		}
+		omittedBalance := self.Omit(balance, []interface{}{"instrument_id", "liquidation_price", "product_id", "risk_rate", "margin_ratio", "maint_margin_ratio", "tiers"})
+		keys := reflect.ValueOf(omittedBalance).MapKeys()
+		accounts := map[string]interface{}{}
+		for k := 0; k < self.Length(keys); k++ {
+			key := self.Member(keys, k).(string)
+			marketBalance := self.Member(balance, key)
+			if strings.Contains(key, ":") {
+				parts := strings.Split(key, ":")
+				currencyId := self.Member(parts, 1)
+				code := self.SafeCurrencyCode(currencyId)
+				account := self.Account()
+				self.SetValue(account, "total", self.SafeFloat(marketBalance, "balance", 0))
+				self.SetValue(account, "used", self.SafeFloat(marketBalance, "hold", 0))
+				self.SetValue(account, "free", self.SafeFloat(marketBalance, "available", 0))
+				self.SetValue(accounts, code, account)
+			} else {
+				self.RaiseException("NotSupported", self.Id+" margin balance response format has changed!")
+			}
+		}
+		self.SetValue(result, symbol.(string), self.ParseBalance(accounts))
+	}
+	return result
+}
+*/
+
+func (self *Okex) ParseFuturesBalance(response interface{}) *Account {
+	result := map[string]interface{}{
+		"info": response,
+	}
+	info := self.SafeValue(response, "info", map[string]interface{}{})
+	ids := reflect.ValueOf(info).MapKeys()
+	for i := 0; i < self.Length(ids); i++ {
+		id := self.Member(ids, i)
+		code := self.SafeCurrencyCode(id)
+		balance := self.SafeValue(info, id, map[string]interface{}{})
+		account := self.Account()
+		self.SetValue(account, "total", self.SafeFloat(balance, "equity", 0))
+		self.SetValue(account, "free", self.SafeFloat(balance, "total_avail_balance", 0))
+		self.SetValue(result, code, account)
+	}
+	return self.ParseBalance(result)
+}
+
+func (self *Okex) ParseSwapBalance(response interface{}) *Account {
+	result := map[string]interface{}{
+		"info": response,
+	}
+	info := self.SafeValue(response, "info", []interface{}{})
+	for i := 0; i < self.Length(info); i++ {
+		balance := self.Member(info, i)
+		marketId := self.SafeString(balance, "instrument_id", "")
+		symbol := marketId
+		if self.ToBool(self.InMap(marketId, self.MarketsById)) {
+			symbol = self.Member(self.Member(self.MarketsById, marketId), "symbol").(string)
+		}
+		account := self.Account()
+		self.SetValue(account, "total", self.SafeFloat(balance, "equity", 0))
+		self.SetValue(account, "free", self.SafeFloat(balance, "total_avail_balance", 0))
+		self.SetValue(result, symbol, account)
+	}
+	return self.ParseBalance(result)
+}
+
+func (self *Okex) ParseBalanceByType(typ string, response interface{}) *Account {
+	if self.ToBool(typ == "account" || typ == "spot") {
+		return self.ParseAccountBalance(response)
+	} else if self.ToBool(typ == "margin") {
+		//return self.ParseMarginBalance(response)
+	} else if self.ToBool(typ == "futures") {
+		return self.ParseFuturesBalance(response)
+	} else if self.ToBool(typ == "swap") {
+		return self.ParseSwapBalance(response)
+	}
+	self.RaiseException("NotSupported", self.Id+" fetchBalance does not support the "+typ+" type (the type must be one of account, spot, margin, futures, swap)")
+	return nil
+}
+
+func (self *Okex) FetchBalance(params map[string]interface{}) (balanceResult *Account, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	defaultType := self.SafeString2(self.Options, "fetchBalance", "defaultType", "")
+	typ := self.SafeString(params, "type", defaultType)
+	if self.ToBool(self.TestNil(typ)) {
+		self.RaiseException("ArgumentsRequired", self.Id+" fetchBalance requires a type parameter (one of account, spot, margin, futures, swap)")
+	}
+	self.LoadMarkets()
+	suffix := "Accounts"
+	if typ == "account" {
+		suffix = "Wallet"
+	}
+	method := typ + "Get" + suffix
+	query := self.Omit(params, "type")
+	response := self.ApiFuncReturnList(method, query, nil, nil)
+	return self.ParseBalanceByType(typ, response), nil
+}
+
+func (self *Okex) CreateOrder(symbol string, typ string, side string, amount float64, price float64, params map[string]interface{}) (result *Order, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	self.LoadMarkets()
+	market := self.Market(symbol)
+	request := map[string]interface{}{
+		"instrument_id": market.Id,
+	}
+	clientOrderId := self.SafeString2(params, "client_oid", "clientOrderId", "")
+	if self.ToBool(!self.TestNil(clientOrderId)) {
+		self.SetValue(request, "client_oid", clientOrderId)
+		params = self.Omit(params, []interface{}{"client_oid", "clientOrderId"})
+	}
+	var method string
+	if market.Future || market.Swap {
+		size := self.AmountToPrecision(symbol, amount)
+		if market.Future {
+			size = self.NumberToString(amount)
+		}
+		request = self.Extend(request, map[string]interface{}{
+			"type":  typ,
+			"size":  size,
+			"price": self.PriceToPrecision(symbol, price),
+		}).(map[string]interface{})
+		if market.Future {
+			self.SetValue(request, "leverage", "10")
+		}
+		method = market.Type + "PostOrder"
+	} else {
+		marginTrading := self.SafeString(params, "margin_trading", "1")
+		request = self.Extend(request, map[string]interface{}{
+			"side":           side,
+			"type":           typ,
+			"margin_trading": marginTrading,
+		}).(map[string]interface{})
+		if self.ToBool(typ == "limit") {
+			// TODO:
+			self.SetValue(request, "price", self.PriceToPrecision(symbol, price))
+			self.SetValue(request, "size", self.AmountToPrecision(symbol, amount))
+			//self.SetValue(request, "price", price)
+			//self.SetValue(request, "size", amount)
+		} else if self.ToBool(typ == "market") {
+			// TODO, 市价单暂无用到先不做，涉及TICK_SIZE的decimalToPrecision，js的实现太复杂了，要翻译很麻烦
+			/*
+				if self.ToBool(side == "buy") {
+					notional := self.SafeFloat(params, "notional", 0)
+					createMarketBuyOrderRequiresPrice := self.SafeValue(self.Options, "createMarketBuyOrderRequiresPrice", True)
+					if self.ToBool(createMarketBuyOrderRequiresPrice) {
+						if self.ToBool(!self.TestNil(price)) {
+							if self.ToBool(self.TestNil(notional)) {
+								notional = amount * price
+							}
+						} else if self.ToBool(self.TestNil(notional)) {
+							self.RaiseException("InvalidOrder", self.Id+" createOrder() requires the price argument with market buy orders to calculate total order cost (amount to spend), where cost = amount * price. Supply a price argument to createOrder() call if you want the cost to be calculated for you from price and amount, or, alternatively, add .options[createMarketBuyOrderRequiresPrice] = false and supply the total cost value in the amount argument or in the notional extra parameter (the exchange-specific behaviour)")
+						}
+					} else {
+						notional = self.IfThenElse(self.ToBool(self.TestNil(notional)), amount, notional).(float64)
+					}
+					precision := market.Precision.Price
+					request["notional"], _ = DecimalToPrecision(notional, Truncate, precision, 2, DecimalPlaces, NoPadding))
+				} else {
+					self.SetValue(request, "size", self.AmountToPrecision(symbol, amount))
+				}
+			*/
+		}
+		method = self.IfThenElse(self.ToBool(marginTrading == "2"), "marginPostOrders", "spotPostOrders").(string)
+	}
+	response := self.ApiFunc(method, self.Extend(request, params), nil, nil)
+	return self.ToOrder(self.ParseOrder(response, market)), nil
+}
+
+func (self *Okex) CancelOrder(id string, symbol string, params map[string]interface{}) (response interface{}, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	if self.ToBool(self.TestNil(symbol)) {
+		self.RaiseException("ArgumentsRequired", self.Id+" cancelOrder() requires a symbol argument")
+	}
+	self.LoadMarkets()
+	market := self.Market(symbol)
+	defaultType := self.SafeString2(self.Options, "cancelOrder", "defaultType", market.Type)
+	typ := self.SafeString(params, "type", defaultType)
+	if self.ToBool(self.TestNil(typ)) {
+		self.RaiseException("ArgumentsRequired", self.Id+" cancelOrder requires a type parameter (one of spot, margin, futures, swap).")
+	}
+	method := typ + "PostCancelOrder"
+	request := map[string]interface{}{
+		"instrument_id": market.Id,
+	}
+	if market.Future || market.Swap {
+		method += "InstrumentId"
+	} else {
+		method += "s"
+	}
+	clientOrderId := self.SafeString2(params, "client_oid", "clientOrderId", "")
+	if self.ToBool(!self.TestNil(clientOrderId)) {
+		method += "ClientOid"
+		self.SetValue(request, "client_oid", clientOrderId)
+	} else {
+		method += "OrderId"
+		self.SetValue(request, "order_id", id)
+	}
+	query := self.Omit(params, []interface{}{"type", "client_oid", "clientOrderId"})
+	response = self.ApiFunc(method, self.Extend(request, query), nil, nil)
+	result := self.IfThenElse(self.ToBool(self.InMap("result", response)), response, self.SafeValue(response, market.Id, map[string]interface{}{}))
+	return self.ParseOrder(result, market), nil
+}
+
+func (self *Okex) ParseOrderStatus(status string) string {
+	statuses := map[string]interface{}{
+		"-2": "failed",
+		"-1": "canceled",
+		"0":  "open",
+		"1":  "open",
+		"2":  "closed",
+		"3":  "open",
+		"4":  "canceled",
+	}
+	return self.SafeString(statuses, status, status)
+}
+
+func (self *Okex) ParseOrderSide(side string) string {
+	sides := map[string]string{
+		"1": "buy",  // open long
+		"2": "sell", // open short
+		"3": "sell", // close long
+		"4": "buy",  // close short
+	}
+	return self.SafeString(sides, side, side)
+}
+
+func (self *Okex) ParseOrder(order interface{}, market interface{}) (result map[string]interface{}) {
+	id := self.SafeString(order, "order_id", "")
+	timestamp := self.Parse8601(self.SafeString(order, "timestamp", ""))
+	side := self.SafeString(order, "side", "")
+	typ := self.SafeString(order, "type", "")
+	if self.ToBool(side != "buy" && side != "sell") {
+		side = self.ParseOrderSide(typ)
+	}
+	if self.ToBool(typ != "limit" && typ != "market") {
+		if self.ToBool(self.InMap("pnl", order)) {
+			typ = "futures"
+		} else {
+			typ = "swap"
+		}
+	}
+	var symbol interface{}
+	marketId := self.SafeString(order, "instrument_id", "")
+	if self.ToBool(self.InMap(marketId, self.MarketsById)) {
+		market = self.Member(self.MarketsById, marketId)
+		symbol = self.Member(market, "symbol")
+	} else {
+		symbol = marketId
+	}
+	if self.ToBool(!self.TestNil(market)) {
+		if self.ToBool(self.TestNil(symbol)) {
+			symbol = self.Member(market, "symbol")
+			symbol = market.(*Market).Symbol
+		}
+	}
+	amount := self.SafeFloat(order, "size", 0)
+	filled := self.SafeFloat2(order, "filled_size", "filled_qty", 0.0)
+	var remaining interface{}
+	if self.ToBool(!self.TestNil(amount)) {
+		if self.ToBool(!self.TestNil(filled)) {
+			amount = math.Max(amount, filled)
+			remaining = math.Max(0, amount-filled)
+		}
+	}
+	if self.ToBool(typ == "market") {
+		remaining = 0
+	}
+	cost := self.SafeFloat2(order, "filled_notional", "funds", 0.0)
+	price := self.SafeFloat(order, "price", 0)
+	average := self.SafeFloat(order, "price_avg", 0)
+	if self.ToBool(self.TestNil(cost)) {
+		if self.ToBool(!self.TestNil(filled) && !self.TestNil(average)) {
+			cost = average * filled
+		}
+	} else {
+		if self.ToBool(self.TestNil(average) && !self.TestNil(filled) && filled > 0) {
+			average = cost / filled
+		}
+	}
+	status := self.ParseOrderStatus(self.SafeString(order, "state", ""))
+	feeCost := self.SafeFloat(order, "fee", 0)
+	var fee interface{}
+	if self.ToBool(!self.TestNil(feeCost)) {
+		var feeCurrency interface{}
+		fee = map[string]interface{}{
+			"cost":     feeCost,
+			"currency": feeCurrency,
+		}
+	}
+	clientOrderId := self.SafeString(order, "client_oid", "")
+	return map[string]interface{}{
+		"info":               order,
+		"id":                 id,
+		"clientOrderId":      clientOrderId,
+		"timestamp":          timestamp,
+		"datetime":           self.Iso8601(timestamp),
+		"lastTradeTimestamp": nil,
+		"symbol":             symbol,
+		"type":               typ,
+		"side":               side,
+		"price":              price,
+		"average":            average,
+		"cost":               cost,
+		"amount":             amount,
+		"filled":             filled,
+		"remaining":          remaining,
+		"status":             status,
+		"fee":                fee,
+		"trades":             nil,
+	}
+}
+
+func (self *Okex) FetchOrder(id string, symbol string, params map[string]interface{}) (result *Order, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	if self.ToBool(self.TestNil(symbol)) {
+		self.RaiseException("ArgumentsRequired", self.Id+" fetchOrder requires a symbol argument")
+	}
+	self.LoadMarkets()
+	market := self.Market(symbol)
+	defaultType := self.SafeString2(self.Options, "fetchOrder", "defaultType", market.Type)
+	typ := self.SafeString(params, "type", defaultType)
+	if self.ToBool(self.TestNil(typ)) {
+		self.RaiseException("ArgumentsRequired", self.Id+" fetchOrder requires a type parameter (one of spot, margin, futures, swap).")
+	}
+	instrumentId := ""
+	if market.Future || market.Swap {
+		instrumentId = "InstrumentId"
+	}
+	method := typ + "GetOrders" + instrumentId
+	request := map[string]interface{}{
+		"instrument_id": self.Member(market, "id"),
+	}
+	clientOid := self.SafeString(params, "client_oid", "")
+	if self.ToBool(!self.TestNil(clientOid)) {
+		method += "ClientOid"
+		self.SetValue(request, "client_oid", clientOid)
+	} else {
+		method += "OrderId"
+		self.SetValue(request, "order_id", id)
+	}
+	query := self.Omit(params, "type")
+	response := self.ApiFunc(method, self.Extend(request, query), nil, nil)
+	return self.ToOrder(self.ParseOrder(response, market)), nil
+}
+
+func (self *Okex) FetchOrdersByState(state string, symbol string, since int64, limit int64, params map[string]interface{}) (orders interface{}) {
+	if self.ToBool(self.TestNil(symbol)) {
+		self.RaiseException("ArgumentsRequired", self.Id+" fetchOrdersByState requires a symbol argument")
+	}
+	self.LoadMarkets()
+	market := self.Market(symbol)
+	defaultType := self.SafeString2(self.Options, "fetchOrder", "defaultType", market.Type)
+	typ := self.SafeString(params, "type", defaultType)
+	if self.ToBool(self.TestNil(typ)) {
+		self.RaiseException("ArgumentsRequired", self.Id+" fetchOrder requires a type parameter (one of spot, margin, futures, swap).")
+	}
+	request := map[string]interface{}{
+		"instrument_id": self.Member(market, "id"),
+		"state":         state,
+	}
+	method := typ + "GetOrders"
+	if market.Future || market.Swap {
+		method += "InstrumentId"
+	}
+	query := self.Omit(params, "type")
+	response := self.ApiFuncReturnList(method, self.Extend(request, query), nil, nil)
+	if self.ToBool(self.Member(market, "type") == "swap" || self.Member(market, "type") == "futures") {
+		orders = self.SafeValue(response, "order_info", []interface{}{})
+	} else {
+		orders = response
+		responseLength := self.Length(response)
+		if self.ToBool(responseLength < 1) {
+			return []interface{}{}
+		}
+		if self.ToBool(responseLength > 1) {
+			before := self.SafeValue(self.Member(response, 1), "before", nil)
+			if self.ToBool(!self.TestNil(before)) {
+				orders = self.Member(response, 0)
+			}
+		}
+	}
+	return self.ParseOrders(orders, market, since, limit)
+}
+
+func (self *Okex) FetchOpenOrders(symbol string, since int64, limit int64, params map[string]interface{}) (result []*Order, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = self.PanicToError(e)
+		}
+	}()
+	return self.ToOrders(self.FetchOrdersByState("6", symbol, since, limit, params)), nil
+}
+
+func (self *Okex) GetPathAuthenticationType(path string) string {
+	// https://github.com/ccxt/ccxt/issues/6651
+	// a special case to handle the optionGetUnderlying interefering with
+	// other endpoints containing this keyword
+	if path == "underlying" {
+		return "public"
+	}
+	auth := self.SafeValue(self.Options, "auth", "")
+	key := self.FindBroadlyMatchedKey(auth, path)
+	return self.SafeString(auth, key, "private")
+}
+
+func (self *Okex) Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (ret interface{}) {
+	// TODO: only support map params
+	request := "/api/" + api + "/" + self.Version + "/"
+	request += self.ImplodeParams(path, params)
+	query := self.Omit(params, self.ExtractParams(path))
+	url := self.ImplodeParams(self.Member(self.Urls["api"], "rest").(string), map[string]interface{}{
+		"hostname": self.Hostname,
+	}) + request
+	typ := self.GetPathAuthenticationType(path)
+	if self.ToBool(typ == "public") {
+		if self.ToBool(self.Length(reflect.ValueOf(query).MapKeys())) {
+			url += "?" + self.Urlencode(query)
+		}
+	} else if self.ToBool(typ == "private") {
+		self.CheckRequiredCredentials()
+		timestamp := self.Iso8601Okex(self.Milliseconds())
+		headers = map[string]interface{}{
+			"OK-ACCESS-KEY":        self.ApiKey,
+			"OK-ACCESS-PASSPHRASE": self.Password,
+			"OK-ACCESS-TIMESTAMP":  timestamp,
+		}
+		auth := timestamp + method + request
+		if self.ToBool(method == "GET") {
+			if self.ToBool(self.Length(reflect.ValueOf(query).MapKeys())) {
+				urlencodedQuery := "?" + self.Urlencode(query)
+				url += urlencodedQuery
+				auth += urlencodedQuery
+			}
+		} else {
+			if self.Length(query) > 0 {
+				body = self.Json(query)
+				auth += body.(string)
+			}
+			self.SetValue(headers, "Content-Type", "application/json")
+		}
+		signature := self.Hmac(self.Encode(auth), self.Encode(self.Secret), "sha256", "base64")
+		self.SetValue(headers, "OK-ACCESS-SIGN", self.Decode(signature))
+	}
+	return map[string]interface{}{
+		"url":     url,
+		"method":  method,
+		"body":    body,
+		"headers": headers,
+	}
+}
+
+func (self *Okex) HandleErrors(httpCode int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}) {
+	fmt.Println(response)
+	feedback := self.Id + " " + body
+	if self.ToBool(httpCode == 503) {
+		self.RaiseException("ExchangeNotAvailable", feedback)
+	}
+	if self.ToBool(!self.ToBool(response)) {
+		return
+	}
+	message := self.SafeString(response, "message", "")
+	errorCode := self.SafeString2(response, "code", "error_code", "")
+	if self.ToBool(!self.TestNil(message)) {
+		self.ThrowExactlyMatchedException(self.Member(self.Exceptions, "exact"), message, feedback)
+		self.ThrowBroadlyMatchedException(self.Member(self.Exceptions, "broad"), message, feedback)
+		self.ThrowExactlyMatchedException(self.Member(self.Exceptions, "exact"), errorCode, feedback)
+		nonEmptyMessage := message != ""
+		nonZeroErrorCode := !self.TestNil(errorCode) && errorCode != "0"
+		if self.ToBool(nonZeroErrorCode || nonEmptyMessage) {
+			self.RaiseException("ExchangeError", feedback)
+		}
+	}
 }
-
-if self.ToBool(!self.TestNil(market)) {
-if self.ToBool(self.TestNil(symbol)) {
-symbol = self.Member(market, "symbol")
-}
-}
-
-amount := self.SafeFloat(order,"size", 0)
-
-filled := self.SafeFloat2(order,"filled_size","filled_qty")
-
-var remaining interface{}
-
-if self.ToBool(!self.TestNil(amount)) {
-if self.ToBool(!self.TestNil(filled)) {
-amount = self.Member(Math, max)
-remaining = self.Member(Math, max)
-}
-}
-
-if self.ToBool(typ == "market") {
-remaining = 0
-}
-
-cost := self.SafeFloat2(order,"filled_notional","funds")
-
-price := self.SafeFloat(order,"price", 0)
-
-average := self.SafeFloat(order,"price_avg", 0)
-
-if self.ToBool(self.TestNil(cost)) {
-if self.ToBool(!self.TestNil(filled) && !self.TestNil(average)) {
-cost = average * filled
-}
-} else {
-if self.ToBool(self.TestNil(average) && !self.TestNil(filled) && filled > 0) {
-average = cost / filled
-}
-}
-
-status := self.ParseOrderStatus(self.SafeString(order,"state", ""))
-
-feeCost := self.SafeFloat(order,"fee", 0)
-
-var fee interface{}
-
-if self.ToBool(!self.TestNil(feeCost)) {
-var feeCurrency interface{}
-fee = map[string]interface{}{
-"cost": feeCost,
-"currency": feeCurrency,
-}
-}
-
-clientOrderId := self.SafeString(order,"client_oid", "")
-
-return map[string]interface{}{
-"info": order,
-"id": id,
-"clientOrderId": clientOrderId,
-"timestamp": timestamp,
-"datetime": self.Iso8601(timestamp),
-"lastTradeTimestamp": nil,
-"symbol": symbol,
-"type": typ,
-"side": side,
-"price": price,
-"average": average,
-"cost": cost,
-"amount": amount,
-"filled": filled,
-"remaining": remaining,
-"status": status,
-"fee": fee,
-"trades": nil,
-}
-
-}
-    
-func (self *Okex) FetchOrder (id string, symbol string, params map[string]interface{}) (order interface{}, err error) {
-    
-if self.ToBool(self.TestNil(symbol)) {
-err = errors.New(self.Id + " fetchOrder requires a symbol argument");
-return
-}
-
-_, err = self.LoadMarkets()
- if err != nil {
- return 
-}
-
-market := self.Market(symbol)
-
-defaultType := self.SafeString2(self.Options,"fetchOrder","defaultType",self.Member(market, "type"))
-
-typ := self.SafeString(params,"type",defaultType)
-
-if self.ToBool(self.TestNil(typ)) {
-err = errors.New(self.Id + " fetchOrder requires a type parameter (one of "spot", "margin", "futures", "swap").");
-return
-}
-
-instrumentId := self.IfThenElse(self.ToBool(self.Member(market, "futures") || self.Member(market, "swap")), "InstrumentId", "")
-
-method := typ + "GetOrders" + instrumentId
-
-request := map[string]interface{}{
-"instrument_id": self.Member(market, "id"),
-}
-
-clientOid := self.SafeString(params,"client_oid", "")
-
-if self.ToBool(!self.TestNil(clientOid)) {
-method += "ClientOid"
-self.SetValue(request, "client_oid", clientOid)
-} else {
-method += "OrderId"
-self.SetValue(request, "order_id", id)
-}
-
-query := self.Omit(params,"type")
-
-response := self.Method(self.Extend(request,query))
-
-return self.ParseOrder(response), nil
-
-}
-    
-func (self *Okex) FetchOrdersByState (status string, symbol string, since int64, limit int64, params map[string]interface{}) (orders interface{}, err error) {
-    
-if self.ToBool(self.TestNil(symbol)) {
-err = errors.New(self.Id + " fetchOrdersByState requires a symbol argument");
-return
-}
-
-_, err = self.LoadMarkets()
- if err != nil {
- return 
-}
-
-market := self.Market(symbol)
-
-defaultType := self.SafeString2(self.Options,"fetchOrder","defaultType",self.Member(market, "type"))
-
-typ := self.SafeString(params,"type",defaultType)
-
-if self.ToBool(self.TestNil(typ)) {
-err = errors.New(self.Id + " fetchOrder requires a type parameter (one of "spot", "margin", "futures", "swap").");
-return
-}
-
-request := map[string]interface{}{
-"instrument_id": self.Member(market, "id"),
-"state": state,
-}
-
-method := typ + "GetOrders"
-
-if self.ToBool(self.Member(market, "futures") || self.Member(market, "swap")) {
-method += "InstrumentId"
-}
-
-query := self.Omit(params,"type")
-
-response := self.Method(self.Extend(request,query))
-
-var orders interface{}
-
-if self.ToBool(self.Member(market, "type") == "swap" || self.Member(market, "type") == "futures") {
-orders = self.SafeValue(response,"order_info",[]interface{}{})
-} else {
-orders = response
-responseLength := self.Length(response)
-if self.ToBool(responseLength < 1) {
-return []interface{}{}
-}
-if self.ToBool(responseLength > 1) {
-before := self.SafeValue(self.Member(response, 1),"before", nil)
-if self.ToBool(!self.TestNil(before)) {
-orders = self.Member(response, 0)
-}
-}
-}
-
-return self.ParseOrders(orders,market,since,limit), nil
-
-}
-    
-func (self *Okex) FetchOpenOrders (symbol string, since int64, limit int64, params map[string]interface{}) (orders interface{}, err error) {
-    
-return self.FetchOrdersByState("6",symbol,since,limit,params), nil
-
-}
-    
-func (self *Okex) Sign (path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) (ret interface{}, err error) {
-    
-isArray := self.Member(Array, isArray)
-
-request := "/api/" + api + "/" + self.Version + "/"
-
-request += self.IfThenElse(self.ToBool(isArray), path, self.ImplodeParams(path,params))
-
-query := self.IfThenElse(self.ToBool(isArray), params, self.Omit(params,self.ExtractParams(path)))
-
-url := self.ImplodeParams(self.Member(self.Member(self.Urls, "api"), "rest"),map[string]interface{}{
-"hostname": self.Hostname,
-}) + request
-
-typ := self.GetPathAuthenticationType(path)
-
-if self.ToBool(typ == "public") {
-if self.ToBool(self.Length(reflect.ValueOf(query).MapKeys())) {
-url += "?" + self.Urlencode(query)
-}
-} else if self.ToBool(typ == "private") {
-self.CheckRequiredCredentials()
-timestamp := self.Iso8601(self.Milliseconds())
-headers = map[string]interface{}{
-"OK-ACCESS-KEY": self.ApiKey,
-"OK-ACCESS-PASSPHRASE": self.Password,
-"OK-ACCESS-TIMESTAMP": timestamp,
-}
-auth := timestamp + method + request
-if self.ToBool(method == "GET") {
-if self.ToBool(self.Length(reflect.ValueOf(query).MapKeys())) {
-urlencodedQuery := "?" + self.Urlencode(query)
-url += urlencodedQuery
-auth += urlencodedQuery
-}
-} else {
-if self.ToBool(isArray || self.Length(reflect.ValueOf(query).MapKeys())) {
-body = self.Json(query)
-auth += body
-}
-self.SetValue(headers, "Content-Type", "application/json")
-}
-signature, err := self.Hmac(self.Encode(auth),self.Encode(self.Secret),"sha256","base64")
-if err != nil {
-return nil, err
-}
-self.SetValue(headers, "OK-ACCESS-SIGN", self.Decode(signature))
-}
-
-return map[string]interface{}{
-"url": url,
-"method": method,
-"body": body,
-"headers": headers,
-}, nil
-
-}
-    
-
-    

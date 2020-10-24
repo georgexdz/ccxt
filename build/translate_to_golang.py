@@ -19,10 +19,10 @@ CODE_INFO = {}
 
 def get_ex_list():
     return [
-        'kucoin',
-        'huobipro',
+        # 'kucoin',
+        # 'huobipro',
         'okex',
-        'bitmax',
+        # 'bitmax',
         # 'binance'
     ]
 
@@ -60,7 +60,11 @@ FUNC_LIST = [
     'sign', 'fetchOrderBook', 'fetchOpenOrders', 'cancelOrder',
     'createOrder', 'fetchOrder', 'parseOrder', 'fetchBalance',
     'fetchOrdersByStatus', 'fetchOrdersByState', 'fetchMarkets',
-    'fetchCurrencies', 'handleErrors', 'fetchAccounts'
+    'fetchCurrencies', 'handleErrors', 'fetchAccounts',
+    'parseOrderStatus', 'fetchOrdersByStates',
+    'ParseOrderSide', 'parseMarkets', 'parseMarket',
+    'fetchMarketsByType', 'getPathAuthenticationType', 'parseOrderSide',
+    'parseBalanceByType', 'parseAccountBalance', 'parseMarginBalance', 'parseFuturesBalance', 'parseSwapBalance'
 ]
 JS_PATCH_FOR_GOLAGNG_TRANSLATE = {
     'kucoin': {
@@ -143,6 +147,7 @@ FUNC_ARG_MAP = {
     'fetchOpenOrders': 'symbol string, since int64, limit int64, params map[string]interface{}',
     'fetchOrdersByStatus': 'status string, symbol string, since int64, limit int64, params map[string]interface{}',
     'fetchOrdersByState': 'status string, symbol string, since int64, limit int64, params map[string]interface{}',
+    'fetchOrdersByStates': 'states string, symbol string, since int64, limit int64, params map[string]interface{}',
     'fetchOrderBook': 'symbol string, limit int64, params map[string]interface{}',
     'fetchOrder': 'id string, symbol string, params map[string]interface{}',
     'sign': 'path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}',
@@ -152,6 +157,18 @@ FUNC_ARG_MAP = {
     'fetchCurrencies': 'params map[string]interface{}',
     'handleErrors': 'httpCode int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{}',
     'fetchAccounts': 'params map[string]interface{}',
+    'parseOrderStatus': 'status string',
+    'ParseOrderSide': 'side string',
+    'parseMarket': 'market interface{}',
+    'parseMarkets': 'markets []interface{}',
+    'fetchMarketsByType': 'typ string, params map[string]interface{}',
+    'getPathAuthenticationType': 'path string',
+    'parseOrderSide': 'side string',
+    'parseBalanceByType': 'typ string, response interface{}',
+    'parseAccountBalance': 'response interface{}',
+    'parseMarginBalance': 'response interface{}',
+    'parseFuturesBalance': 'response interface{}',
+    'parseSwapBalance': 'response interface{}',
 }
 RETURN_MAP = {
     'createOrder': 'result *Order, err error',
@@ -159,15 +176,28 @@ RETURN_MAP = {
     'cancelOrder': 'response interface{}, err error',
     'fetchOrdersByStatus': 'orders interface{}',
     'fetchOrdersByState': 'orders interface{}',
+    'fetchOrdersByStates': 'orders interface{}',
     'fetchOpenOrders': 'result []*Order, err error',
     'fetchOrderBook': 'orderBook *OrderBook, err error',
     'fetchOrder': 'result *Order, err error',
     'sign': 'ret interface{}',
     'parseOrder': 'result map[string]interface{}',
-    'fetchMarkets': 'ret interface{}',
-    'fetchCurrencies': 'ret interface{}',
+    'fetchMarkets': '[] interface{}',
+    'fetchCurrencies': 'map[string]interface{}',
     'handleErrors': '',
     'fetchAccounts': '[]interface{}',
+    'parseOrderStatus': 'string',
+    'ParseOrderSide': 'string',
+    'parseMarket': 'interface{}',
+    'parseMarkets': '[] interface{}',
+    'fetchMarketsByType': '[] interface{}',
+    'getPathAuthenticationType': 'string',
+    'parseOrderSide': 'string',
+    'parseBalanceByType': 'interface{}',
+    'parseAccountBalance': 'map[string]interface{}',
+    'parseMarginBalance': 'map[string]interface{}',
+    'parseFuturesBalance': 'map[string]interface{}',
+    'parseSwapBalance': 'map[string]interface{}',
 }
 PANIC_DEAL_FUNC = [o.lower() for o in [
     'fetchOrderBook', 'fetchOpenOrders', 'cancelOrder',
@@ -325,7 +355,12 @@ def ObjectExpression(syntax, info={}):
 
 
 def Literal(syntax, info={}):
-    val = syntax.raw.replace("'", '"')
+    if "'" in syntax.raw:
+        val = syntax.raw.replace('"', '')
+        val = val.replace("'", '')
+        val = f'"{val}"'
+    else:
+        val = f'{syntax.value}'
     return val
 
 
@@ -386,7 +421,7 @@ def AssignmentExpression(syntax, info={}):
 
 def BlockStatement(syntax, info={}):
     lines = '\n'.join([call_func_by_syntax(block) for block in syntax.body])
-    return f'{{{lines}}}'
+    return f'{{\n{lines}}}'
 
 
 def IfStatement(syntax, info={}):
@@ -462,7 +497,11 @@ def FunctionDeclaration(syntax, info={}):
 
     func_arg_str = get_arg(func_name)
     a = [tuple(pair.split(' ')) for pair in func_arg_str.split(', ')]
-    ARG_TYPE = dict(a)
+    try:
+        ARG_TYPE = dict(a)
+    except Exception as e:
+        print(str(e))
+        print(a)
     func_ret_str = get_return(func_name)
     a = [tuple(pair.split(' ')) for pair in func_ret_str.split(', ')]
     try:
@@ -662,7 +701,8 @@ def write_ex_file(ex, code):
     with open(os.path.join(des_dir, f'{ex.lower()}_test.go'), 'w') as f:
         f.write(format_test_file(ex))
     # go fmt
-    cmd = "go fmt -x %s" % shlex.quote(des_dir)
+    # cmd = "go fmt -x %s" % shlex.quote(des_dir)
+    cmd = 'GO111MODULE=on go fmt -x %s' % shlex.quote(des_dir)
     p = subprocess.Popen(cmd, shell=True)
     p.communicate()
 
@@ -677,4 +717,5 @@ def translate():
 
 if __name__ == '__main__':
     # test()
+    print(os.getcwd())
     translate()

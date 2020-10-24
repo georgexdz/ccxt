@@ -1,87 +1,89 @@
-
 package huobipro
 
 import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"testing"
 )
 
-func get_test_config(ex *Huobipro) {
-	plan, err := ioutil.ReadFile("test_config.json")
+func init() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+}
+
+// api.json 需要放到和此文件同一目录
+func loadApiKey(ex *Huobipro) {
+	plan, err := ioutil.ReadFile("api.json")
 	if err != nil {
 		return
 	}
 
-	var data interface{}
+	var data map[string]interface{}
 	err = json.Unmarshal(plan, &data)
 	if err != nil {
 		return
 	}
-	
-	fmt.Println(data)
 
-	if json_config, ok := data.(map[string]interface{}); ok {
-        ex.Urls = map[string]interface{}{
-        	"api": map[string]interface{}{
-        		"public": json_config["url"],
-        		"private": json_config["url"],
-			},
-        }
-		ex.ApiUrls["private"] = json_config["url"].(string)
-		ex.ApiUrls["public"] = json_config["url"].(string)
-		ex.ApiKey = json_config["key"].(string)
-		ex.Secret = json_config["secret"].(string)
-		ex.Password = json_config["password"].(string)
+	ex.ApiKey = data["apiKey"].(string)
+	ex.Secret = data["secret"].(string)
+	if data["password"] != nil {
+		ex.Password = data["password"].(string)
 	}
 }
 
 func TestFetchOrderBook(t *testing.T) {
-	ex, _ := New(nil)
-	fmt.Println(ex.ApiDecodeInfo)
-	ex.Verbose = true
-
-	get_test_config(ex)
-
-	markets, err := ex.LoadMarkets()
+	ex, err := New(nil)
 	if err != nil {
 		t.Fatal(err)
-		return
 	}
-	fmt.Println("markets:", markets)
 
-	orderbook, err := ex.FetchOrderBook("BTC/USDT", 20, nil)
+	ex.Verbose = false
+	loadApiKey(ex)
+	fmt.Println(ex.ApiKey)
+
+	// @ FetchOrderBook
+	orderbook, err := ex.FetchOrderBook("BTC/USDT", 5, nil)
 	if err != nil {
-		fmt.Println(err.Error())
-		return
+		t.Fatal(err)
 	}
-	fmt.Println("orderbook:", orderbook)
+	log.Println("##### FetchOrderBook:", orderbook)
 
-	ex.FetchBalance(nil)
-
-	order, err := ex.CreateOrder("ETH/BTC", "limit", "buy", 0.0001, 0.024, nil)
+	// @ FetchBalance
+	balance, err := ex.FetchBalance(nil)
 	if err != nil {
-		return
+		t.Fatal(err)
+	}
+	log.Println("##### FetchBalance:", ex.Json(balance))
+
+	// @ CreateOrder
+	order, err := ex.CreateOrder("BTC/USDT", "limit", "buy", 0.001, 8000., nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Println("##### CreateOrder:", order.Id)
+
+	// @ FetchOrder
+	o, err := ex.FetchOrder(order.Id, "BTC/USDT", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Println("##### FetchOrder:", ex.Json(o))
+
+	// @ FetchOpenOrders
+	openOrders, err := ex.FetchOpenOrders("BTC/USDT", 0, 1000, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Println("##### FetchOpenOrders:", ex.Json(openOrders))
+
+	// @ CancelOrder
+	for _, order := range openOrders {
+		resp, err := ex.CancelOrder(order.Id, "BTC/USDT", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		log.Println("##### CancelOrder:", resp)
 	}
 
-	fmt.Println(ex.FetchOrder(order["id"].(string), "ETH/BTC", nil))
-
-	openOrders, err := ex.FetchOpenOrders("ETH/BTC", 0, 20, nil)
-	if err == nil {
-		fmt.Println("openorders", openOrders)
-	}
-
-	if err == nil {
-		res, err := ex.CancelOrder(order["id"].(string), "ETH/BTC", nil)
-		fmt.Println(res, err)
-	}
 }
-
-//func main() {
-	//ex := &ccxt.Kucoin{}
-	//ex.Init()
-	//// testFetchMarkets(ex)
-	//fmt.Println("enter")
-	//testFetchOrderBook(ex)
-//}

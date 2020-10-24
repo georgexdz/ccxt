@@ -63,6 +63,7 @@ type Market struct {
 	Spot           bool        `json:"spot"`       // from bitmex
 	Swap           bool        `json:"swap"`       // from bitmex
 	Future         bool        `json:"future"`     // from bitmex
+	Option         bool
 	Prediction     bool        `json:"prediction"` // from bitmex
 	Precision      Precision   `json:"precision"`
 	Limits         Limits      `json:"limits"`
@@ -114,7 +115,7 @@ type ExchangeInfo struct {
 	Urls                             map[string]interface{}
 	Api                              Apis              `json:"api"`
 	Timeframes                       map[string]string `json:"timeframes"`
-	Fees                             Fees              `json:"fees"`
+	Fees                             map[string]interface{}
 	UserAgents                       map[string]string `json:"userAgents"`
 	Header                           http.Header       `json:"header"`
 	Proxy                            string            `json:"proxy"`
@@ -123,6 +124,7 @@ type ExchangeInfo struct {
 	Precision                        Precision         `json:"precision"`
 	Exceptions                       map[string]interface{}
 	DontGetUsedBalanceFromStaleCache bool `json:"dontGetUsedBalanceFromStaleCache"`
+	CommonCurrencies map[string]string
 }
 
 // Apis public and private methods
@@ -342,6 +344,7 @@ func (o *Order) InitFromMap(m map[string]interface{}) (result *Order) {
 		if v == nil {
 			continue
 		}
+
 		switch k {
 		case "id":
 			o.Id = v.(string)
@@ -531,7 +534,7 @@ type ExchangeInterface interface {
 	// FetchMyTrades(symbol *string, since *JSONTime, limit *int, params map[string]interface{}) ([]Trade, error)
 	FetchBalance(params map[string]interface{}) (*Account, error)
 	//FetchCurrencies() (map[string]*Currency, error)
-	FetchMarkets(params map[string]interface{}) interface{}
+	FetchMarkets(params map[string]interface{}) []interface{}
 	FetchAccounts(params map[string]interface{}) []interface{}
 
 	CreateOrder(symbol, otype, side string, amount float64, price float64, params map[string]interface{}) (*Order, error)
@@ -541,7 +544,7 @@ type ExchangeInterface interface {
 
 	// Describe() []byte
 	//GetMarkets() map[string]*Market
-	SetMarkets([]*Market, map[string]*Currency) map[string]*Market
+	SetMarkets([]interface{}, map[string]interface{}) map[string]*Market
 	//GetMarketsById() map[string]Market
 	//SetMarketsById(map[string]Market)
 	//GetCurrencies() map[string]Currency
@@ -565,6 +568,8 @@ type ExchangeInterface interface {
 	SetUid(string)
 	SetBaseUrl(string)
 	BaseUrl() string
+
+	FetchCurrencies(params map[string]interface{}) map[string]interface{}
 }
 
 type ExchangeInterfaceInternal interface {
@@ -572,8 +577,9 @@ type ExchangeInterfaceInternal interface {
 	Sign(path string, api string, method string, params map[string]interface{}, headers interface{}, body interface{}) interface{}
 	ApiFuncDecode(function string) (path string, api string, method string)
 	ApiFunc(function string, params interface{}, headers map[string]interface{}, body interface{}) (response map[string]interface{})
-	Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response map[string]interface{})
-	Request(path string, api string, method string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (response map[string]interface{})
+	ApiFuncReturnList(function string, params interface{}, headers map[string]interface{}, body interface{}) (response []interface{})
+	Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response interface{})
+	Request(path string, api string, method string, params map[string]interface{}, headers map[string]interface{}, body interface{}) (response interface{})
 	Describe() []byte
 	ParseOrder(interface{}, interface{}) map[string]interface{}
 	HandleErrors(code int64, reason string, url string, method string, headers interface{}, body string, response interface{}, requestHeaders interface{}, requestBody interface{})
@@ -602,6 +608,7 @@ type Exchange struct {
 	DescribeMap    map[string]interface{}
 	Options        map[string]interface{}
 	httpExceptions map[string]string
+	Hostname	string
 }
 
 func (self *Exchange) Init(config *ExchangeConfig) (err error) {
@@ -656,7 +663,7 @@ func (self *Exchange) Describe() []byte {
 	return nil
 }
 
-func (self *Exchange) FetchMarkets(params map[string]interface{}) interface{} {
+func (self *Exchange) FetchMarkets(params map[string]interface{}) []interface{} {
 	return nil
 }
 func (self *Exchange) FetchOrderBook(symbol string, limit int64, params map[string]interface{}) (*OrderBook, error) {
@@ -676,7 +683,52 @@ func (self *Exchange) MarketId(symbol string) string {
 	}
 }
 
-func (self *Exchange) SetMarkets(markets []*Market, currencies map[string]*Currency) map[string]*Market {
+func MarketFromMap(o interface{}) *Market {
+	p := &Market{}
+
+	if m, ok := o.(map[string]interface{}); ok {
+		p.Info = o
+		p.Id = m["id"].(string)
+		p.Symbol = m["symbol"].(string)
+		p.Base = m["base"].(string)
+		p.Quote = m["quote"].(string)
+		p.BaseId = m["baseId"].(string)
+		if m["taker"] != nil {
+			p.Taker = m["taker"].(float64)
+		}
+		if m["maker"] != nil {
+			p.Maker = m["maker"].(float64)
+		}
+		if m["precision"] != nil {
+			precisionMap := m["precision"].(map[string]interface{})
+			if precisionMap["amount"] != nil {
+				p.Precision.Amount = precisionMap["amount"].(int)
+			}
+			if precisionMap["price"] != nil {
+				p.Precision.Price = precisionMap["price"].(int)
+			}
+		}
+		if m["spot"] != nil {
+			p.Spot = m["spot"].(bool)
+		}
+		if m["type"] != nil {
+			p.Type = m["type"].(string)
+		}
+		if m["futures"] != nil {
+			p.Future = m["futures"].(bool)
+		}
+		if m["swap"] != nil {
+			p.Swap = m["swap"].(bool)
+		}
+		if m["option"] != nil {
+			p.Option = m["option"].(bool)
+		}
+	}
+
+	return p
+}
+
+func (self *Exchange) SetMarkets(markets []interface{}, currencies map[string]interface{}) map[string]*Market {
 	symbols := make([]string, len(markets))
 	Ids := make([]string, len(markets))
 	marketsBySymbol := make(map[string]*Market, len(markets))
@@ -684,7 +736,8 @@ func (self *Exchange) SetMarkets(markets []*Market, currencies map[string]*Curre
 	baseCurrencies := make([]*Currency, 0)
 	quoteCurrencies := make([]*Currency, 0)
 
-	for i, market := range markets {
+	for i, o := range markets {
+		market := MarketFromMap(o)
 		marketsBySymbol[market.Symbol] = market
 		marketsById[market.Id] = market
 		symbols[i] = market.Symbol
@@ -780,52 +833,18 @@ func (self *Exchange) SetMarkets(markets []*Market, currencies map[string]*Curre
 
 // func (self *Exchange) LoadMarkets(reload bool, params map[string]interface{}) (map[string]*Market, error) {
 func (self *Exchange) LoadMarkets() map[string]*Market {
-	//self.Lock()
-	//defer self.Unlock()
-	var currencies map[string]*Currency
-	if self.Markets == nil {
-		marketData := self.Child.FetchMarkets(nil)
-		var markets []*Market
-		if marketSliceData, ok := marketData.([]interface{}); ok {
-			for _, oneMarket := range marketSliceData {
-				if oneMarketMap, ok := oneMarket.(map[string]interface{}); ok {
-					oneMarket := &Market{
-						Id:     oneMarketMap["id"].(string),
-						Symbol: oneMarketMap["symbol"].(string),
-					}
-					markets = append(markets, oneMarket)
-				}
-			}
-		}
-		return self.Child.SetMarkets(markets, currencies)
+	if self.Markets != nil {
+		return self.Markets
 	}
-	return self.Markets
-	/*
-		if !reload && self.Markets != nil {
-			if self.MarketsById == nil {
-				var marketsSlice []Market
-				for _, one := range self.Markets {
-					marketsSlice = append(marketsSlice, one)
-				}
-				return self.SetMarkets(marketsSlice, nil)
-			}
-			return self.Markets, nil
-		}
-		var currencies map[string]Currency
-		var err error
-		if self.GetInfo().Has.FetchCurrencies {
-			currencies, err = self.FetchCurrencies()
-			if err != nil {
-				return nil, err
-			}
-		}
-		markets, err := self.FetchMarkets(params)
-		if err != nil {
-			return nil, err
-		}
 
-		return self.SetMarkets(markets, currencies)
-	*/
+	var currencies map[string]interface{}
+	hasfetchCurrencies := self.DescribeMap["has"].(map[string]interface{})["fetchCurrencies"]
+	if hasfetchCurrencies != nil && hasfetchCurrencies.(bool) {
+		 currencies = self.Child.FetchCurrencies(map[string]interface{}{})
+	}
+
+	markets := self.Child.FetchMarkets(nil)
+	return self.Child.SetMarkets(markets, currencies)
 }
 
 func (self *Exchange) LoadAccounts() []interface{} {
@@ -835,8 +854,15 @@ func (self *Exchange) LoadAccounts() []interface{} {
 		return self.Accounts
 	}
 	accounts := self.Child.FetchAccounts(nil)
-	self.Accounts = accounts
-	self.AccountsById = self.IndexBy(accounts, "id")
+	for _, account := range accounts {
+		one := map[string]interface{}{
+			"id": int64(account.(map[string]interface{})["id"].(float64)),
+			"state": account.(map[string]interface{})["state"].(string),
+			"type": account.(map[string]interface{})["type"].(string),
+		}
+		self.Accounts = append(self.Accounts, one)
+	}
+	self.AccountsById = self.IndexBy(self.Accounts, "id")
 	return self.Accounts
 }
 
@@ -847,7 +873,7 @@ func (self *Exchange) Request(
 	params map[string]interface{},
 	headers map[string]interface{},
 	body interface{},
-) (response map[string]interface{}) {
+) (response interface{}) {
 	signInfo := self.Child.Sign(path, api, method, params, headers, body)
 	return self.Child.Fetch(
 		self.Member(signInfo, "url").(string),
@@ -865,7 +891,7 @@ func (self *Exchange) PrepareRequestHeaders(req *http.Request, headers map[strin
 	}
 }
 
-func (self *Exchange) Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response map[string]interface{}) {
+func (self *Exchange) Fetch(url string, method string, headers map[string]interface{}, body interface{}) (response interface{}) {
 	var rbody []byte
 	if body != nil {
 		switch body.(type) {
@@ -915,7 +941,7 @@ func (self *Exchange) Fetch(url string, method string, headers map[string]interf
 
 	strRawResp := string(respRaw)
 	if self.Verbose {
-		log.Println("Response:", method, url, resp.StatusCode, resp.Header, strRawResp)
+		fmt.Println("Response:", method, url, resp.StatusCode, resp.Header, strRawResp)
 	}
 
 	// ignore error
@@ -987,7 +1013,27 @@ func (self *Exchange) ApiFuncDecode(function string) (path string, api string, m
 
 func (self *Exchange) ApiFunc(function string, params interface{}, headers map[string]interface{}, body interface{}) (result map[string]interface{}) {
 	path, api, method := self.Child.ApiFuncDecode(function)
-	return self.Child.Request(path, api, method, params.(map[string]interface{}), headers, body)
+	return self.Child.Request(path, api, method, params.(map[string]interface{}), headers, body).(map[string]interface{})
+}
+
+func (self *Exchange) ApiFuncReturnList(function string, params interface{}, headers map[string]interface{}, body interface{}) (result []interface{}) {
+	path, api, method := self.Child.ApiFuncDecode(function)
+	return self.Child.Request(path, api, method, params.(map[string]interface{}), headers, body).([]interface{})
+}
+
+func (self *Exchange) Parse8601(x string) int64 {
+	t, err := time.Parse(time.RFC3339, "2017-08-14T10:00:00.050Z")
+	if err != nil {
+		self.RaiseInternalException("Parse8601 " + x + " err!")
+	}
+	return t.Unix()
+}
+
+func (self *Exchange) Iso8601Okex(milliseconds int64) string {
+	var seconds int64
+	seconds = milliseconds / 1000
+	loc, _:= time.LoadLocation("")
+	return time.Unix(seconds, 0).In(loc).Format("2006-01-02T15:04:05.070Z")
 }
 
 func (self *Exchange) Iso8601(milliseconds int64) string {
@@ -997,33 +1043,8 @@ func (self *Exchange) Iso8601(milliseconds int64) string {
 }
 
 func (self *Exchange) Milliseconds() int64 {
-	return time.Now().UnixNano() / 1000000
+	return time.Now().Unix() * 1000
 }
-
-/*
-// Init Exchange
-func Init(conf ccxt.ExchangeConfig) (*Exchange, error) {
-	var info ccxt.ExchangeInfo
-	configFile := "/Users/stefan/Github/ccxt/templates/internal/app/bitmex/bitmex.json"
-	f, err := os.Open(configFile)
-	defer f.Close()
-	if err != nil {
-		return nil, err
-	}
-	json.NewDecoder(f).Decode(&info)
-	timeout := 10 * time.Second
-	if conf.Timeout > 0 {
-		timeout = conf.Timeout * time.Millisecond
-	}
-	client := &http.Client{Timeout: timeout}
-	exchange := Exchange{
-		Config: conf,
-		Client: client,
-		Info:   info,
-	}
-	return &exchange, nil
-}
-*/
 
 // Exchanges returns the available exchanges
 func Exchanges() []string {
@@ -1041,143 +1062,10 @@ func MapValues(input interface{}) []interface{} {
 	return output
 }
 
-/*
-// LoadMarkets from the exchange that are active and available
-func (self *Exchange) LoadMarkets(reload bool, params map[string]interface{}) (map[string]Market, error) {
-	if !reload && self.Markets != nil {
-		if self.MarketsById == nil {
-			var marketsSlice []Market
-			for _, one := range self.Markets {
-				marketsSlice = append(marketsSlice, one)
-			}
-			return self.SetMarkets(marketsSlice, nil)
-		}
-		return self.Markets, nil
-	}
-	var currencies map[string]Currency
-	var err error
-	if self.GetInfo().Has.FetchCurrencies {
-		currencies, err = self.FetchCurrencies()
-		if err != nil {
-			return nil, err
-		}
-	}
-	markets, err := self.FetchMarkets(params)
-	if err != nil {
-		return nil, err
-	}
-	return self.SetMarkets(markets, currencies)
-}
-
-*/
-
 func getCurrencyUsedOnOpenOrders(currency string) float64 {
 	// TODO: implement getCurrencyUsedOnOpenOrders()
 	return 0.0
 }
-
-/*
-// setMarkets sets Markets, MarketsById, Symbols, SymbolsByIds, Ids,
-// Currencies, CurrenciesByIds into the Exchange struct
-func (self *Exchange) SetMarkets(markets []Market, currencies map[string]Currency) (map[string]Market, error) {
-	symbols := make([]string, len(markets))
-	Ids := make([]string, len(markets))
-	marketsBySymbol := make(map[string]Market, len(markets))
-	marketsById := make(map[string]Market, len(markets))
-	baseCurrencies := make([]Currency, 0)
-	quoteCurrencies := make([]Currency, 0)
-
-	for i, market := range markets {
-		marketsBySymbol[market.Symbol] = market
-		marketsById[market.Id] = market
-		symbols[i] = market.Symbol
-		Ids[i] = market.Id
-		// currency logic
-		baseCurrency := new(Currency)
-		if market.Base != "" {
-			baseCurrency.Id = market.BaseId
-			if baseCurrency.Id == "" {
-				baseCurrency.Id = market.Base
-			}
-			baseCurrency.NumericId = market.BaseNumericId
-			baseCurrency.Code = market.Base
-			switch {
-			case market.Precision.Base != 0:
-				baseCurrency.Precision = market.Precision.Base
-			case market.Precision.Amount != 0:
-				baseCurrency.Precision = market.Precision.Amount
-			default:
-				baseCurrency.Precision = 8
-			}
-		}
-		baseCurrencies = append(baseCurrencies, *baseCurrency)
-		quoteCurrency := new(Currency)
-		if market.Quote != "" {
-			quoteCurrency.Id = market.QuoteId
-			if baseCurrency.Id == "" {
-				quoteCurrency.Id = market.Quote
-			}
-			quoteCurrency.NumericId = market.QuoteNumericId
-			quoteCurrency.Code = market.Quote
-			switch {
-			case market.Precision.Base != 0:
-				quoteCurrency.Precision = market.Precision.Base
-			case market.Precision.Amount != 0:
-				quoteCurrency.Precision = market.Precision.Amount
-			default:
-				quoteCurrency.Precision = 8
-			}
-		}
-		quoteCurrencies = append(quoteCurrencies, *quoteCurrency)
-	}
-	allCurrencies := append(baseCurrencies, quoteCurrencies...)
-	groupedCurrencies := make(map[string][]Currency)
-	for _, currency := range allCurrencies {
-		groupedCurrencies[currency.Code] = append(groupedCurrencies[currency.Code], currency)
-	}
-	sortedCurrencies := make(map[string]Currency)
-	for code, currencies := range groupedCurrencies {
-		for _, currency := range currencies {
-			if sortedCurrencies[code].Id == "" {
-				sortedCurrencies[code] = currency
-			}
-			if sortedCurrencies[code].Precision < currency.Precision {
-				sortedCurrencies[code] = currency
-			}
-		}
-	}
-
-	sort.Strings(symbols)
-	sort.Strings(Ids)
-
-	self.Symbols = symbols
-	self.Ids = Ids
-	self.MarketsById = marketsById
-	self.Markets = marketsBySymbol
-
-	if len(currencies) == 0 {
-		xCurrencies := self.Currencies
-		if xCurrencies == nil {
-			xCurrencies = make(map[string]Currency)
-		}
-		for code, currency := range sortedCurrencies {
-			xCurrencies[code] = currency
-		}
-		self.Currencies = xCurrencies
-	} else {
-		self.Currencies = sortedCurrencies
-	}
-	currenciesById := self.CurrenciesById
-	if len(currenciesById) == 0 {
-		currenciesById = make(map[string]Currency, len(currencies))
-	}
-	for _, currency := range sortedCurrencies {
-		currenciesById[currency.Id] = currency
-	}
-	self.CurrenciesById = currenciesById
-	return self.Markets, nil
-}
-*/
 
 func SortSliceByIndex(s [][2]float64, idx int, descending bool) {
 	if !descending {
@@ -1320,17 +1208,23 @@ func (self *Exchange) SafeValue(m interface{}, key interface{}, args ...interfac
 	if len(args) > 0 {
 		def = args[0]
 	}
-	if mm, ok := m.(map[string]interface{}); ok {
-		if val, ok := mm[key.(string)]; ok {
-			return val
+
+	switch key.(type) {
+	case string:
+		if mm, ok := m.(map[string]interface{}); ok {
+			if val, ok := mm[key.(string)]; ok {
+				 return val
+			}
+		}
+	case int, int64, int8, int32:
+		if li, ok := m.([]interface{}); ok {
+			idx := int(ToInteger(key))
+			if idx >= 0 && idx < len(li) {
+				return li[idx]
+			}
 		}
 	}
-	if li, ok := m.([]interface{}); ok {
-		idx := int(ToInteger(key))
-		if idx >= 0 && idx < len(li) {
-			return li[idx]
-		}
-	}
+
 	return def
 }
 
@@ -1402,6 +1296,10 @@ func (self *Exchange) SafeString2(d interface{}, key1 string, key2 string, defau
 	return self.SafeEither(d, key1, key2, defaultVal).(string)
 }
 
+func (self *Exchange) SafeValue2(d interface{}, key1 string, key2 string, defaultVal interface{}) interface{} {
+	return self.SafeEither(d, key1, key2, defaultVal)
+}
+
 func (self *Exchange) SafeEither(d interface{}, key1 string, key2 string, defaultVal interface{}) interface{} {
 	if d, ok := d.(map[string]interface{}); ok {
 		if val, ok := d[key1]; ok {
@@ -1414,10 +1312,26 @@ func (self *Exchange) SafeEither(d interface{}, key1 string, key2 string, defaul
 	return defaultVal
 }
 
+func (self *Exchange) NumberToString(v interface{}) string {
+	return NumberToString(v.(float64))
+}
+
 func (self *Exchange) SafeString(d interface{}, key string, defaultVal interface{}) string {
 	if d, ok := d.(map[string]interface{}); ok {
 		val := d[key]
 		if val != nil {
+			switch val.(type) {
+			case int:
+				return strconv.Itoa(val.(int))
+			case int64:
+				return strconv.FormatInt(val.(int64),10)
+			}
+			return fmt.Sprintf("%v", val)
+		}
+	}
+	if d, ok := d.([]string); ok {
+		if idx, err := strconv.Atoi(key); err != nil {
+			val := d[idx]
 			return fmt.Sprintf("%v", val)
 		}
 	}
@@ -1576,13 +1490,18 @@ func (self *Exchange) Uuid() string {
 	return uuid.NewV4().String()
 }
 
+func (self *Exchange) CostToPrecision(symbol string, cost float64) string {
+	ret, _ := DecimalToPrecision(cost, Round, self.Markets[symbol].Precision.Cost, DecimalPlaces, NoPadding)
+	return ret
+}
+
 func (self *Exchange) PriceToPrecision(symbol string, price float64) string {
-	ret, _ := DecimalToPrecision(price, Round, 8, DecimalPlaces, NoPadding)
+	ret, _ := DecimalToPrecision(price, Round, self.Markets[symbol].Precision.Price, DecimalPlaces, NoPadding)
 	return ret
 }
 
 func (self *Exchange) AmountToPrecision(symbol string, amount float64) string {
-	ret, _ := DecimalToPrecision(amount, Truncate, 8, DecimalPlaces, NoPadding)
+	ret, _ := DecimalToPrecision(amount, Truncate, self.Markets[symbol].Precision.Amount, DecimalPlaces, NoPadding)
 	return ret
 }
 
@@ -1595,10 +1514,18 @@ func (self *Exchange) Account() map[string]interface{} {
 }
 
 func (self *Exchange) SafeCurrencyCode(x interface{}) string {
-	if v, ok := x.(string); ok {
-		return v
+	code := ""
+
+	if !self.TestNil(x) {
+		currencyId := x.(string)
+		if self.CurrenciesById != nil && self.CurrenciesById[currencyId] != nil {
+			code = self.CurrenciesById[currencyId].Code
+		} else {
+			code = self.CommonCurrencyCode(strings.ToUpper(currencyId))
+		}
 	}
-	return ""
+
+	return code
 }
 
 func (self *Exchange) Length(o interface{}) int {
@@ -1693,13 +1620,25 @@ func (self *Exchange) SetValue(x interface{}, k string, v interface{}) {
 }
 
 func (self *Exchange) CheckRequiredCredentials() {
+}
 
+func (self *Exchange) UrlencodeWithArrayRepeat(i interface{}) string {
+	re := regexp.MustCompile(`%5B\d*%5D`)
+	return re.ReplaceAllString(self.Urlencode(i), "")
 }
 
 func (self *Exchange) Urlencode(i interface{}) string {
 	if m, ok := i.(map[string]interface{}); ok {
 		v := url.Values{}
-		for k, val := range m {
+
+		keys := make([]string, 0, len(m))
+		for k, _ := range m {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, k := range keys {
+			val := m[k]
 			v.Add(k, fmt.Sprintf("%v", val))
 		}
 		return v.Encode()
@@ -1757,6 +1696,10 @@ func (self *Exchange) LimitBuy(symbol string, price, amount float64, params map[
 
 func (self *Exchange) LimitSell(symbol string, price, amount float64, params map[string]interface{}) (*Order, error) {
 	return self.Child.CreateOrder(symbol, "limit", "sell", amount, price, params)
+}
+
+func (self *Exchange) FetchCurrencies(params map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{}
 }
 
 func (self *Exchange) CancelOrder(id string, symbol string, params map[string]interface{}) (interface{}, error) {
@@ -1990,10 +1933,19 @@ func (self *Exchange) IndexBy(x interface{}, k string) map[string]interface{} {
 	for _, v := range self.Values(x) {
 		m := v.(map[string]interface{})
 		if _, ok := m[k]; ok {
-			out[m[k].(string)] = v
+			out[fmt.Sprintf("%v", m[k])] = v
 		}
 	}
 	return out
+}
+
+func (self *Exchange) InArray(a string, list []string) bool {
+    for _, b := range list {
+        if b == a {
+            return true
+        }
+    }
+    return false
 }
 
 func (self *Exchange) FetchAccounts(params map[string]interface{}) []interface{} {
@@ -2080,8 +2032,24 @@ func (self *Exchange) InitDescribe() (err error) {
 
 	self.Options = self.DescribeMap["options"].(map[string]interface{})
 	self.Urls = self.DescribeMap["urls"].(map[string]interface{})
-	self.Version = self.DescribeMap["version"].(string)
+	if self.DescribeMap["version"] != nil {
+		self.Version = self.DescribeMap["version"].(string)
+	}
 	self.Exceptions = self.DescribeMap["exceptions"].(map[string]interface{})
+	if hostName, ok := self.DescribeMap["hostname"]; ok {
+		self.Hostname = hostName.(string)
+	}
+	if fees, ok := self.DescribeMap["fees"]; ok {
+		self.Fees = fees.(map[string]interface{})
+	}
+	self.CommonCurrencies = map[string]string{
+		"XBT": "BTC",
+        "BCC": "BCH",
+        "DRK": "DASH",
+        "BCHABC": "BCH",
+        "BCHSV": "BSV",
+	}
+
 	return
 }
 
@@ -2097,4 +2065,14 @@ func (self *Exchange) BaseUrl() string {
 		return u
 	}
 	return ""
+}
+
+func (self *Exchange) Ymdhms(m int64, t string) string {
+    local1, _:= time.LoadLocation("") //等同于"UTC"
+	unixTimeUTC:=time.Unix(m/1000, 0).In(local1) //gives unix time stamp in utc
+	return unixTimeUTC.Format(fmt.Sprintf("2006-01-02%v15:04:05", t))
+}
+
+func (self *Exchange) CommonCurrencyCode (currency string) string {
+	return self.SafeString(self.CommonCurrencies, currency, currency)
 }

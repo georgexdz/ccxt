@@ -287,7 +287,7 @@ func (self *Kucoin) Describe() []byte {
 }`)
 }
 
-func (self *Kucoin) FetchMarkets(params map[string]interface{}) (ret interface{}) {
+func (self *Kucoin) FetchMarkets(params map[string]interface{}) []interface{} {
 	response := self.ApiFunc("publicGetSymbols", params, nil, nil)
 	data := self.Member(response, "data")
 	result := []interface{}{}

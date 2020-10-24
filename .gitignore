@@ -33,3 +33,5 @@ python/LICENSE.txt
 .env
 *.swp
 test_config.json
+api.json
+go/generated
