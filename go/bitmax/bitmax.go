@@ -247,7 +247,7 @@ func (self *Bitmax) ParseOrderStatus(status string) string {
 	return status
 }
 
-func (self *Bitmax) FetchCurrencies(params map[string]interface{}) (ret interface{}) {
+func (self *Bitmax) FetchCurrencies(params map[string]interface{}) map[string]interface{} {
 	assets := self.ApiFunc("publicGetAssets", params, nil, nil)
 	margin := self.ApiFunc("publicGetMarginAssets", params, nil, nil)
 	cash := self.ApiFunc("publicGetCashAssets", params, nil, nil)
