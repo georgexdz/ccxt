@@ -856,9 +856,9 @@ func (self *Exchange) LoadAccounts() []interface{} {
 	accounts := self.Child.FetchAccounts(nil)
 	for _, account := range accounts {
 		one := map[string]interface{}{
-			"id":    int64(account.(map[string]interface{})["id"].(float64)),
-			"state": account.(map[string]interface{})["state"].(string),
-			"type":  account.(map[string]interface{})["type"].(string),
+			"id":    account.(map[string]interface{})["id"],
+			"state": account.(map[string]interface{})["state"],
+			"type":  account.(map[string]interface{})["type"],
 		}
 		self.Accounts = append(self.Accounts, one)
 	}
@@ -1495,11 +1495,17 @@ func (self *Exchange) CostToPrecision(symbol string, cost float64) string {
 }
 
 func (self *Exchange) PriceToPrecision(symbol string, price float64) string {
+	if self.Markets[symbol] == nil {
+		return self.Float64ToString(price)
+	}
 	ret, _ := DecimalToPrecision(price, Round, self.Markets[symbol].Precision.Price, DecimalPlaces, NoPadding)
 	return ret
 }
 
 func (self *Exchange) AmountToPrecision(symbol string, amount float64) string {
+	if self.Markets[symbol] == nil {
+		return self.Float64ToString(amount)
+	}
 	ret, _ := DecimalToPrecision(amount, Truncate, self.Markets[symbol].Precision.Amount, DecimalPlaces, NoPadding)
 	return ret
 }
@@ -1886,7 +1892,8 @@ func (self *Exchange) HandleRestResponse(response string, jsonResponse interface
 }
 
 func (self *Exchange) Float64ToString(f float64) string {
-	return fmt.Sprintf("%v", f)
+	//return fmt.Sprintf("%v", f)
+	return strconv.FormatFloat(f, 'f', -1, 64)
 }
 
 // 如果是 map 就使用值转为 slice
