@@ -941,7 +941,7 @@ func (self *Exchange) Fetch(url string, method string, headers map[string]interf
 
 	strRawResp := string(respRaw)
 	if self.Verbose {
-		fmt.Println("Response:", method, url, resp.StatusCode, resp.Header, strRawResp)
+		log.Println("Response:", method, url, resp.StatusCode, resp.Header, strRawResp)
 	}
 
 	// ignore error
@@ -1002,7 +1002,6 @@ func (self *Exchange) DefineRestApi() (err error) {
 }
 
 func (self *Exchange) ApiFuncDecode(function string) (path string, api string, method string) {
-	// fmt.Println(self.ApiDecodeInfo)
 	if info, ok := self.ApiDecodeInfo[function]; ok {
 		return info.Path, info.Api, info.Method
 	} else {
@@ -1823,7 +1822,6 @@ func (self *Exchange) ThrowBroadlyMatchedException(broad interface{}, s interfac
 }
 
 func (self *Exchange) PanicToError(e interface{}) (err error) {
-	//fmt.Println("panic: ", e)
 	switch e.(type) {
 	case []string:
 		args := e.([]string)
@@ -1979,7 +1977,7 @@ func (self *Exchange) ArrayConcat(a interface{}, b interface{}) (result []interf
 func (self *Exchange) FilterByValueSinceLimit(arr []interface{}, field string, value interface{}, since interface{}, limit interface{}, key string, tail bool) (result []interface{}) {
 	defer func() {
 		if e := recover(); e != nil {
-			fmt.Println(fmt.Sprintf("filter_by_symbol_since_limit err: %v, arr: %v", e, arr))
+			log.Printf("filter_by_symbol_since_limit err: %v, arr: %v\n", e, arr)
 		}
 	}()
 
