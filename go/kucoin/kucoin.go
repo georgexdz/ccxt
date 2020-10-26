@@ -337,7 +337,7 @@ func (self *Kucoin) FetchMarkets(params map[string]interface{}) []interface{} {
 	return result
 }
 
-func (self *Kucoin) FetchCurrencies(params map[string]interface{}) (ret interface{}) {
+func (self *Kucoin) FetchCurrencies(params map[string]interface{}) map[string]interface{} {
 	response := self.ApiFunc("publicGetCurrencies", params, nil, nil)
 	responseData := self.Member(response, "data")
 	result := map[string]interface{}{}
